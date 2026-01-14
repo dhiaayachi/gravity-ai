@@ -17,12 +17,17 @@ import (
 )
 
 type Engine struct {
-	Node   *raftInternal.AgentNode
-	health *health.Monitor
-	llm    llm.Client
+	Node *raftInternal.AgentNode // Public for E2E tests
 
-	// commandSender handles submitting logical commands (Vote/Answer) to Raft
+	// Decoupled dependencies
+	fsm        *raftInternal.FSM
+	health     *health.Monitor
+	llm        llm.Client
+	nodeConfig *raftInternal.Config // For ID
+
+	// Interfaces for mocking
 	commandSender CommandSender
+	clusterState  ClusterState
 
 	// listeners for task completion (TaskID -> chan *core.Task)
 	listeners sync.Map
@@ -33,13 +38,40 @@ type CommandSender interface {
 	Apply(cmd []byte, timeout time.Duration) error
 }
 
+// ClusterState defines the interface for querying cluster status
+type ClusterState interface {
+	IsLeader() bool
+	GetFormattedID() string // For logging
+	GetServerCount() (int, error)
+}
+
 type defaultCommandSender struct {
 	Raft *raft.Raft
 }
 
 func (d *defaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
-	log.Printf("[%s] Leader applying command", d.Raft.String())
-	return d.Raft.Apply(cmd, timeout).Error()
+	f := d.Raft.Apply(cmd, timeout)
+	return f.Error()
+}
+
+type defaultClusterState struct {
+	Node *raftInternal.AgentNode
+}
+
+func (d *defaultClusterState) IsLeader() bool {
+	return d.Node.Raft.State() == raft.Leader
+}
+
+func (d *defaultClusterState) GetFormattedID() string {
+	return d.Node.Config.ID
+}
+
+func (d *defaultClusterState) GetServerCount() (int, error) {
+	cfg := d.Node.Raft.GetConfiguration()
+	if err := cfg.Error(); err != nil {
+		return 0, err
+	}
+	return len(cfg.Configuration().Servers), nil
 }
 
 // TaskFuture allows waiting for a task to be finalized
@@ -61,9 +93,12 @@ func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
 func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client) *Engine {
 	return &Engine{
 		Node:          node,
+		fsm:           node.FSM,
 		health:        health,
 		llm:           llm,
+		nodeConfig:    node.Config,
 		commandSender: &defaultCommandSender{Raft: node.Raft},
+		clusterState:  &defaultClusterState{Node: node},
 	}
 }
 
@@ -72,9 +107,14 @@ func (e *Engine) SetCommandSender(sender CommandSender) {
 	e.commandSender = sender
 }
 
+// SetClusterState sets the cluster state (for testing/mocking)
+func (e *Engine) SetClusterState(state ClusterState) {
+	e.clusterState = state
+}
+
 // SubmitTask handles a new task submission and returns a future, called from the leader
 func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, error) {
-	if e.Node.Raft.State() != raft.Leader {
+	if !e.clusterState.IsLeader() {
 		return nil, fmt.Errorf("not leader")
 	}
 
@@ -121,17 +161,17 @@ func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, erro
 
 func (e *Engine) Start() {
 	go func() {
-		for event := range e.Node.FSM.EventCh {
+		for event := range e.fsm.EventCh {
 			switch event.Type {
 			case raftInternal.EventTaskAdmitted:
 				task := event.Data.(*core.Task)
 				e.handleTaskAdmitted(task)
 			case raftInternal.EventAnswerSubmitted:
 				// If leader, check if we can move to Proposal
-				if e.Node.Raft.State() == raft.Leader {
+				if e.clusterState.IsLeader() {
 					ans := event.Data.(*core.Answer)
 					// Get task for validation
-					if val, ok := e.Node.FSM.Tasks.Load(ans.TaskID); ok {
+					if val, ok := e.fsm.Tasks.Load(ans.TaskID); ok {
 						task := val.(*core.Task)
 						e.runProposalPhase(task)
 					}
@@ -146,9 +186,9 @@ func (e *Engine) Start() {
 					e.runVotePhase(task)
 				}
 			case raftInternal.EventVoteSubmitted:
-				if e.Node.Raft.State() == raft.Leader {
+				if e.clusterState.IsLeader() {
 					vote := event.Data.(*core.Vote)
-					if val, ok := e.Node.FSM.Tasks.Load(vote.TaskID); ok {
+					if val, ok := e.fsm.Tasks.Load(vote.TaskID); ok {
 						task := val.(*core.Task)
 						e.finalizeTask(task)
 					}
@@ -168,24 +208,24 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
-	log.Printf("[%s] Received task admission: %s. Starting local brainstorm.", e.Node.Config.ID, task.ID)
+	log.Printf("[%s] Received task admission: %s. Starting local brainstorm.", e.nodeConfig.ID, task.ID)
 	// Every node participates in brainstorm
 	e.runBrainstormPhase(task)
 }
 
 func (e *Engine) runBrainstormPhase(task *core.Task) {
-	log.Printf("[%s] Starting Brainstorm phase for task %s", e.Node.Config.ID, task.ID)
+	log.Printf("[%s] Starting Brainstorm phase for task %s", e.nodeConfig.ID, task.ID)
 
 	// Simulate "Broadcasting" logic by just getting a local answer for now
 	ansContent, err := e.llm.Generate(task.Content)
 	if err != nil {
-		log.Printf("[%s] LLM generation failed: %v", e.Node.Config.ID, err)
+		log.Printf("[%s] LLM generation failed: %v", e.nodeConfig.ID, err)
 		return
 	}
 
 	answer := core.Answer{
 		TaskID:  task.ID,
-		AgentID: string(e.Node.Config.ID),
+		AgentID: string(e.nodeConfig.ID),
 		Content: ansContent,
 	}
 
@@ -197,22 +237,22 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to apply answer: %v", e.Node.Config.ID, err)
+		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, err)
 		return
 	}
 }
 
 func (e *Engine) runProposalPhase(task *core.Task) {
-	log.Printf("[%s] Starting Proposal phase for task %s", e.Node.Config.ID, task.ID)
+	log.Printf("[%s] Starting Proposal phase for task %s", e.nodeConfig.ID, task.ID)
 
 	// Retrieve answers (Reading from FSM state locally since we are leader)
 	var answers []core.Answer
-	if val, ok := e.Node.FSM.TaskAnswers.Load(task.ID); ok {
+	if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
 		answers = val.([]core.Answer)
 	}
 
 	if len(answers) == 0 {
-		log.Printf("[%s] No answers received for task %s", e.Node.Config.ID, task.ID)
+		log.Printf("[%s] No answers received for task %s", e.nodeConfig.ID, task.ID)
 		return
 	}
 
@@ -231,13 +271,13 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to update task to proposal: %v", e.Node.Config.ID, err)
+		log.Printf("[%s] Failed to update task to proposal: %v", e.nodeConfig.ID, err)
 		return
 	}
 }
 
 func (e *Engine) runVotePhase(task *core.Task) {
-	log.Printf("[%s] Starting Vote phase for task %s", e.Node.Config.ID, task.ID)
+	log.Printf("[%s] Starting Vote phase for task %s", e.nodeConfig.ID, task.ID)
 
 	// Simulate "Broadcasting" vote request
 	// In reality each node receives the proposal, validates it, and votes.
@@ -245,14 +285,14 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	// Use LLM to validate the proposal
 	isValid, err := e.llm.Validate(task.Content, task.Result)
 	if err != nil {
-		log.Printf("[%s] LLM validation failed: %v", e.Node.Config.ID, err)
+		log.Printf("[%s] LLM validation failed: %v", e.nodeConfig.ID, err)
 		// Decide default behavior on error. For now, assume reject if we can't validate.
 		isValid = false
 	}
 
 	vote := core.Vote{
 		TaskID:   task.ID,
-		AgentID:  string(e.Node.Config.ID),
+		AgentID:  string(e.nodeConfig.ID),
 		Accepted: isValid,
 	}
 
@@ -264,7 +304,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to submit vote: %v", e.Node.Config.ID, err)
+		log.Printf("[%s] Failed to submit vote: %v", e.nodeConfig.ID, err)
 		return
 	}
 }
@@ -272,7 +312,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 func (e *Engine) finalizeTask(task *core.Task) {
 	// Guard: Check if task is already final (Done or Failed)
 	// We re-check FSM status because task variable might be old
-	if val, ok := e.Node.FSM.Tasks.Load(task.ID); ok {
+	if val, ok := e.fsm.Tasks.Load(task.ID); ok {
 		currentTask := val.(*core.Task)
 		if currentTask.Status == core.TaskStatusDone || currentTask.Status == core.TaskStatusFailed {
 			return
@@ -280,17 +320,16 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	}
 
 	var votes []core.Vote
-	if val, ok := e.Node.FSM.TaskVotes.Load(task.ID); ok {
+	if val, ok := e.fsm.TaskVotes.Load(task.ID); ok {
 		votes = val.([]core.Vote)
 	}
 
 	// Calculate Quorum
-	cfg := e.Node.Raft.GetConfiguration()
-	if err := cfg.Error(); err != nil {
-		log.Printf("[%s] Failed to get raft configuration: %v", e.Node.Config.ID, err)
+	serverCount, err := e.clusterState.GetServerCount()
+	if err != nil {
+		log.Printf("[%s] Failed to get raft configuration: %v", e.nodeConfig.ID, err)
 		return
 	}
-	serverCount := len(cfg.Configuration().Servers)
 	if serverCount == 0 {
 		return
 	}
@@ -311,11 +350,11 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	var finalStatus core.TaskStatus
 
 	if accepted >= quorum {
-		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). Accepted.", e.Node.Config.ID, task.ID, accepted, serverCount)
+		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). Accepted.", e.nodeConfig.ID, task.ID, accepted, serverCount)
 		finalStatus = core.TaskStatusDone
 		// TODO: Increment leader reputation
 	} else if rejected >= quorum {
-		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). REJECTED.", e.Node.Config.ID, task.ID, rejected, serverCount)
+		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). REJECTED.", e.nodeConfig.ID, task.ID, rejected, serverCount)
 		finalStatus = core.TaskStatusFailed
 		// TODO: Decrement leader reputation & trigger election
 	} else {
