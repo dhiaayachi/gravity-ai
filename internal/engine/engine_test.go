@@ -59,6 +59,10 @@ func (m *mockLLM) Validate(taskContent string, proposal string) (bool, error) {
 	return m.validResp, m.validErr
 }
 
+func (m *mockLLM) Aggregate(taskContent string, answers []string) (string, error) {
+	return "Aggregated: " + m.genResp, nil
+}
+
 func (m *mockLLM) HealthCheck() error {
 	return nil
 }
@@ -163,8 +167,11 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
 	h.fsm.Tasks.Store("t1", task)
 
-	// Add answer to FSM
-	h.fsm.TaskAnswers.Store("t1", []core.Answer{{TaskID: "t1", Content: "ans"}})
+	// Add answer to FSM (Need 2 for quorum of 3)
+	h.fsm.TaskAnswers.Store("t1", []core.Answer{
+		{TaskID: "t1", Content: "ans1"},
+		{TaskID: "t1", Content: "ans2"},
+	})
 
 	// Trigger event (simulation of Engine.Start loop logic)
 	// We call the handler method directly if we extract it, or simulate logic.
@@ -189,8 +196,9 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	if taskUpd.Status != core.TaskStatusProposal {
 		t.Errorf("Expected Proposal status, got %v", taskUpd.Status)
 	}
-	if taskUpd.Result != "ans" {
-		t.Errorf("Expected result 'ans', got %v", taskUpd.Result)
+	// Mock Aggregation returns "Aggregated: " + genResp. genResp was "Answer" in newTestHarness
+	if taskUpd.Result != "Aggregated: Answer" {
+		t.Errorf("Expected aggregated result, got %v", taskUpd.Result)
 	}
 }
 
@@ -328,7 +336,11 @@ func TestEngine_Start(t *testing.T) {
 
 	// 2. AnswerSubmitted -> Proposal (as Leader)
 	ans := &core.Answer{TaskID: "t1", Content: "ans", AgentID: "node1"}
-	h.fsm.TaskAnswers.Store("t1", []core.Answer{*ans})
+	// Need 2 answers for quorum of 3
+	h.fsm.TaskAnswers.Store("t1", []core.Answer{
+		*ans,
+		{TaskID: "t1", Content: "ans2", AgentID: "node2"},
+	})
 	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventAnswerSubmitted, Data: ans}
 
 	time.Sleep(50 * time.Millisecond)

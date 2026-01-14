@@ -82,6 +82,15 @@ Output ONLY valid JSON.
 	return validation.Valid, nil
 }
 
+func (c *GeminiClient) Aggregate(taskContent string, answers []string) (string, error) {
+	prompt := fmt.Sprintf("Task: %s\n\nAnswers:\n", taskContent)
+	for i, ans := range answers {
+		prompt += fmt.Sprintf("Answer %d: %s\n", i+1, ans)
+	}
+	prompt += "\nAggregate these answers into a single, high-quality response."
+	return c.Generate(prompt)
+}
+
 func (c *GeminiClient) HealthCheck() error {
 	// Lightweight check: List models
 	// genai client doesn't expose ListModels directly on the main client struct easily in all versions,

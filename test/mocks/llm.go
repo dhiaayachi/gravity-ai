@@ -36,6 +36,13 @@ func (m *MockLLM) HealthCheck() error {
 	return nil
 }
 
+func (m *MockLLM) Aggregate(taskContent string, answers []string) (string, error) {
+	if !m.Healthy {
+		return "", errors.New("llm unhealthy")
+	}
+	return "Aggregated Answer", nil
+}
+
 // YesMock always approves
 type YesMock struct {
 	MockLLM

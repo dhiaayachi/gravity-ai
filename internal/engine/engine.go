@@ -251,13 +251,35 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 		answers = val.([]core.Answer)
 	}
 
-	if len(answers) == 0 {
-		log.Printf("[%s] No answers received for task %s", e.nodeConfig.ID, task.ID)
+	// 1. Quorum Check
+	serverCount, err := e.clusterState.GetServerCount()
+	if err != nil {
+		log.Printf("[%s] Failed to get server count: %v", e.nodeConfig.ID, err)
+		return
+	}
+	if serverCount == 0 {
+		return
+	}
+	quorum := serverCount/2 + 1
+
+	if len(answers) < quorum {
+		log.Printf("[%s] Not enough answers for task %s (Has: %d, Need: %d)", e.nodeConfig.ID, task.ID, len(answers), quorum)
 		return
 	}
 
-	// "Aggregate" answers - for now just pick the first one
-	proposalContent := answers[0].Content
+	// 2. Aggregate Answers using LLM
+	log.Printf("[%s] Aggregating %d answers for task %s", e.nodeConfig.ID, len(answers), task.ID)
+
+	var answerContents []string
+	for _, ans := range answers {
+		answerContents = append(answerContents, ans.Content)
+	}
+
+	proposalContent, err := e.llm.Aggregate(task.Content, answerContents)
+	if err != nil {
+		log.Printf("[%s] LLM aggregation failed: %v", e.nodeConfig.ID, err)
+		return
+	}
 
 	// Update Task to Proposal status
 	task.Status = core.TaskStatusProposal

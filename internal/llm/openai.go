@@ -99,6 +99,15 @@ Respond with JSON object: {"valid": boolean, "reason": string}.
 	return validation.Valid, nil
 }
 
+func (c *OpenAIClient) Aggregate(taskContent string, answers []string) (string, error) {
+	prompt := fmt.Sprintf("Task: %s\n\nAnswers:\n", taskContent)
+	for i, ans := range answers {
+		prompt += fmt.Sprintf("Answer %d: %s\n", i+1, ans)
+	}
+	prompt += "\nAggregate these answers into a single, high-quality response."
+	return c.Generate(prompt)
+}
+
 func (c *OpenAIClient) HealthCheck() error {
 	// Lightweight check: List models
 	_, err := c.client.ListModels(context.Background())

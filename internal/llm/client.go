@@ -6,6 +6,7 @@ import "strings"
 type Client interface {
 	Generate(prompt string) (string, error)
 	Validate(taskContent string, proposal string) (bool, error)
+	Aggregate(taskContent string, answers []string) (string, error)
 	HealthCheck() error
 }
 
