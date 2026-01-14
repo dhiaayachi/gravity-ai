@@ -50,11 +50,11 @@ func main() {
 		go func() {
 			time.Sleep(5 * time.Second)
 			log.Println("Submitting a test task...")
-			task, err := eng.SubmitTask("What is the meaning of life?", "user-1")
+			future, err := eng.SubmitTask("What is the meaning of life?", "user-1")
 			if err != nil {
 				log.Printf("Failed to submit task: %v", err)
 			} else {
-				log.Printf("Task submitted: %s", task.ID)
+				log.Printf("Task submitted: %s", future.TaskID)
 			}
 		}()
 	}

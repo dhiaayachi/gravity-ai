@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
@@ -18,27 +20,47 @@ type Engine struct {
 	Node   *raftInternal.AgentNode
 	health *health.Monitor
 	llm    llm.Client
-	// Policy governs the agent's behavior
-	Policy Policy
+	// policy governs the agent's behavior
+	policy policy
 
-	// CommandSender handles submitting logical commands (Vote/Answer) to Raft
-	CommandSender CommandSender
+	// commandSender handles submitting logical commands (Vote/Answer) to Raft
+	commandSender CommandSender
+
+	// listeners for task completion (TaskID -> chan *core.Task)
+	listeners sync.Map
 }
 
+// CommandSender defines the interface for submitting Raft commands
 type CommandSender interface {
 	Apply(cmd []byte, timeout time.Duration) error
 }
 
-type DefaultCommandSender struct {
+type defaultCommandSender struct {
 	Raft *raft.Raft
 }
 
-func (d *DefaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
+func (d *defaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
 	return d.Raft.Apply(cmd, timeout).Error()
 }
 
-type Policy struct {
+type policy struct {
 	VoteLogic func(task *core.Task) bool
+}
+
+// TaskFuture allows waiting for a task to be finalized
+type TaskFuture struct {
+	TaskID   string
+	resultCh <-chan *core.Task
+}
+
+// Await blocks until the task is finalized or context is cancelled
+func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
+	select {
+	case task := <-f.resultCh:
+		return task, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client) *Engine {
@@ -46,29 +68,45 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		Node:   node,
 		health: health,
 		llm:    llm,
-		Policy: Policy{
+		policy: policy{
 			VoteLogic: func(task *core.Task) bool { return true }, // Default auto-accept
 		},
-		CommandSender: &DefaultCommandSender{Raft: node.Raft},
+		commandSender: &defaultCommandSender{Raft: node.Raft},
 	}
 }
 
-// SubmitTask handles a new task submission
-func (e *Engine) SubmitTask(content string, requester string) (*core.Task, error) {
+// SetVoteLogic sets the voting logic policy (for testing)
+func (e *Engine) SetVoteLogic(logic func(task *core.Task) bool) {
+	e.policy.VoteLogic = logic
+}
+
+// SetCommandSender sets the command sender (for testing/mocking)
+func (e *Engine) SetCommandSender(sender CommandSender) {
+	e.commandSender = sender
+}
+
+// SubmitTask handles a new task submission and returns a future, called from the leader
+func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, error) {
 	if e.Node.Raft.State() != raft.Leader {
 		return nil, fmt.Errorf("not leader")
 	}
 
+	taskID := uuid.New().String()
 	task := &core.Task{
-		ID:        uuid.New().String(),
+		ID:        taskID,
 		Content:   content,
 		Status:    core.TaskStatusAdmitted,
 		Requester: requester,
 		CreatedAt: time.Now(),
 	}
 
+	// Register listener
+	ch := make(chan *core.Task, 1)
+	e.listeners.Store(taskID, ch)
+
 	taskBytes, err := json.Marshal(task)
 	if err != nil {
+		e.listeners.Delete(taskID)
 		return nil, err
 	}
 
@@ -79,17 +117,19 @@ func (e *Engine) SubmitTask(content string, requester string) (*core.Task, error
 
 	b, err := json.Marshal(cmd)
 	if err != nil {
+		e.listeners.Delete(taskID)
 		return nil, err
 	}
 
-	if err := e.CommandSender.Apply(b, 5*time.Second); err != nil {
+	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
+		e.listeners.Delete(taskID)
 		return nil, err
 	}
 
-	// Trigger Brainstorm phase asynchronously
-	// go e.runBrainstormPhase(task) -- Handled via events now
-
-	return task, nil
+	return &TaskFuture{
+		TaskID:   taskID,
+		resultCh: ch,
+	}, nil
 }
 
 func (e *Engine) Start() {
@@ -111,7 +151,10 @@ func (e *Engine) Start() {
 				}
 			case raftInternal.EventTaskUpdated:
 				task := event.Data.(*core.Task)
-				if task.Status == core.TaskStatusProposal {
+				switch task.Status {
+				case core.TaskStatusDone, core.TaskStatusFailed:
+					e.notifyTaskCompletion(task)
+				case core.TaskStatusProposal:
 					// All nodes vote
 					e.runVotePhase(task)
 				}
@@ -126,6 +169,15 @@ func (e *Engine) Start() {
 			}
 		}
 	}()
+}
+
+func (e *Engine) notifyTaskCompletion(task *core.Task) {
+	if val, ok := e.listeners.Load(task.ID); ok {
+		ch := val.(chan *core.Task)
+		ch <- task
+		close(ch)
+		e.listeners.Delete(task.ID)
+	}
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
@@ -157,13 +209,10 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.CommandSender.Apply(b, 5*time.Second); err != nil {
+	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
 		log.Printf("Failed to apply answer: %v", err)
 		return
 	}
-
-	// Transition to Proposal Phase
-	// e.runProposalPhase(task) -- Handled via events now
 }
 
 func (e *Engine) runProposalPhase(task *core.Task) {
@@ -194,13 +243,10 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.CommandSender.Apply(b, 5*time.Second); err != nil {
+	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
 		log.Printf("Failed to update task to proposal: %v", err)
 		return
 	}
-
-	// Transition to Vote Phase
-	// go e.runVotePhase(task) -- Handled via events now
 }
 
 func (e *Engine) runVotePhase(task *core.Task) {
@@ -209,7 +255,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	// Simulate "Broadcasting" vote request
 	// In reality each node receives the proposal, validates it, and votes.
 
-	shouldAccept := e.Policy.VoteLogic(task)
+	shouldAccept := e.policy.VoteLogic(task)
 
 	vote := core.Vote{
 		TaskID:   task.ID,
@@ -224,14 +270,10 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.CommandSender.Apply(b, 5*time.Second); err != nil {
+	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
 		log.Printf("Failed to submit vote: %v", err)
 		return
 	}
-
-	// Check for consensus
-	// In a real loop we'd wait for enough votes. Here we just check immediately.
-	// e.finalizeTask(task) -- Handled via events now
 }
 
 func (e *Engine) finalizeTask(task *core.Task) {
@@ -298,5 +340,7 @@ func (e *Engine) finalizeTask(task *core.Task) {
 		Value: taskBytes,
 	}
 	b, _ := json.Marshal(cmd)
-	e.CommandSender.Apply(b, 5*time.Second)
+	e.commandSender.Apply(b, 5*time.Second)
+
+	// Notify listeners is done via EventTaskUpdated in the event loop
 }
