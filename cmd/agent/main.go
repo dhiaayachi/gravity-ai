@@ -21,6 +21,7 @@ func main() {
 	dataDir := flag.String("data-dir", "./data", "Data directory")
 	peersFlag := flag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001,node3=127.0.0.1:8002)")
 	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
+	httpAddr := flag.String("http", ":8080", "HTTP Service address")
 
 	// LLM Flags
 	provider := flag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
@@ -89,7 +90,6 @@ func main() {
 	eng.Start()
 
 	// Start HTTP Server for API/Admin
-	httpAddr := flag.String("http", ":8080", "HTTP Service address")
 	go func() {
 		http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
 			taskContent := r.URL.Query().Get("content")
