@@ -7,44 +7,46 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
+	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/test/cluster"
+	"github.com/dhiaayachi/gravity-ai/test/mocks"
 )
 
 // TestClusterScenarios runs E2E tests for 3 scenarios using the cluster package
 func TestClusterScenarios(t *testing.T) {
 	// Scenario 1: 3 nodes, All Agree
 	t.Run("3 Nodes - All Agree", func(t *testing.T) {
-		runScenario(t, 3, 20000, "task-agree", func(nodeID string, task *core.Task) bool {
-			return true // All agree
+		runScenario(t, 3, 20000, "task-agree", func(i int) llm.Client {
+			return mocks.NewYesMock()
 		}, core.TaskStatusDone)
 	})
 
 	// Scenario 2: 3 nodes, 2 Agree, 1 Disagree -> Accepted (Majority)
 	t.Run("3 Nodes - 2 Agree 1 Disagree", func(t *testing.T) {
-		runScenario(t, 3, 20010, "task-majority", func(nodeID string, task *core.Task) bool {
+		runScenario(t, 3, 20010, "task-majority", func(i int) llm.Client {
 			// e.g. Node 2 disagree
-			if nodeID == "node-2" {
-				return false
+			if i == 2 {
+				return mocks.NewNoMock()
 			}
-			return true
+			return mocks.NewYesMock()
 		}, core.TaskStatusDone)
 	})
 
 	// Scenario 3: 3 nodes, 1 Agree (Leader), 2 Disagree -> Rejected
 	t.Run("3 Nodes - 1 Agree 2 Disagree", func(t *testing.T) {
-		runScenario(t, 3, 20020, "task-rejected", func(nodeID string, task *core.Task) bool {
-			// Leader is usually node-0 in bootstrap if we start it first and bootstrap
-			if nodeID == "node-0" {
-				return true
+		runScenario(t, 3, 20020, "task-rejected", func(i int) llm.Client {
+			// Leader is usually node-0 in bootstrap
+			if i == 0 {
+				return mocks.NewYesMock()
 			}
-			return false
+			return mocks.NewNoMock()
 		}, core.TaskStatusFailed)
 	})
 }
 
-func runScenario(t *testing.T, count int, basePort int, taskContent string, voteLogic func(id string, t *core.Task) bool, expectedStatus core.TaskStatus) {
+func runScenario(t *testing.T, count int, basePort int, taskContent string, mockFactory func(int) llm.Client, expectedStatus core.TaskStatus) {
 	// 1. Setup Cluster
-	c := cluster.Setup(t, count, basePort, voteLogic)
+	c := cluster.Setup(t, count, basePort, mockFactory)
 	defer c.Close()
 
 	// 2. Submit Task to Leader

@@ -2,16 +2,14 @@ package cluster
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/dhiaayachi/gravity-ai/internal/core"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
-	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft" // Added import
 	"github.com/hashicorp/raft"
 )
 
@@ -40,7 +38,7 @@ func (s *TestCommandSender) Apply(cmd []byte, timeout time.Duration) error {
 
 // Setup creates a new cluster with the specified node count, base port, and voting policy.
 // It initializes nodes, engines, handles leader join, and returns the Cluster struct.
-func Setup(t *testing.T, count int, basePort int, voteLogic func(id string, t *core.Task) bool) *Cluster {
+func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int) llm.Client) *Cluster {
 	var nodes []*raftInternal.AgentNode
 	var dirs []string
 	var engines []*engine.Engine
@@ -50,7 +48,7 @@ func Setup(t *testing.T, count int, basePort int, voteLogic func(id string, t *c
 		id := fmt.Sprintf("node-%d", i)
 		port := basePort + i
 		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		dir, _ := ioutil.TempDir("", id)
+		dir, _ := os.MkdirTemp("", id)
 		dirs = append(dirs, dir)
 
 		cfg := &raftInternal.Config{
@@ -65,16 +63,8 @@ func Setup(t *testing.T, count int, basePort int, voteLogic func(id string, t *c
 			t.Fatalf("Failed to create node %s: %v", id, err)
 		}
 
-		// Mock LLM setup
-		mockLLM := &llm.MockClient{
-			Healthy: true,
-			ValidationLogic: func(taskContent, proposal string) bool {
-				// We construct a temporary task object to pass to the legacy voteLogic function
-				// This keeps the test API compatible while using the LLM interface
-				t := &core.Task{Content: taskContent, Result: proposal}
-				return voteLogic(id, t)
-			},
-		}
+		// Mock LLM setup via factory
+		mockLLM := mockFactory(i)
 		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM)
 
 		nodes = append(nodes, node)

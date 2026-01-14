@@ -9,8 +9,8 @@ import (
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
-	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
+	"github.com/dhiaayachi/gravity-ai/test/mocks"
 )
 
 func main() {
@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// Setup Dependencies
-	llmClient := &llm.MockClient{Healthy: true}
+	llmClient := &mocks.MockLLM{Healthy: true}
 	healthMonitor := health.NewMonitor(llmClient)
 	eng := engine.NewEngine(node, healthMonitor, llmClient)
 	eng.Start()
