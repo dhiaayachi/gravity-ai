@@ -65,14 +65,17 @@ func Setup(t *testing.T, count int, basePort int, voteLogic func(id string, t *c
 			t.Fatalf("Failed to create node %s: %v", id, err)
 		}
 
-		mockLLM := &llm.MockClient{Healthy: true}
+		// Mock LLM setup
+		mockLLM := &llm.MockClient{
+			Healthy: true,
+			ValidationLogic: func(taskContent, proposal string) bool {
+				// We construct a temporary task object to pass to the legacy voteLogic function
+				// This keeps the test API compatible while using the LLM interface
+				t := &core.Task{Content: taskContent, Result: proposal}
+				return voteLogic(id, t)
+			},
+		}
 		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM)
-
-		// Set Policy
-		nodeID := id // Capture loop variable
-		eng.SetVoteLogic(func(task *core.Task) bool {
-			return voteLogic(nodeID, task)
-		})
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)

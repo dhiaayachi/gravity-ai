@@ -20,8 +20,6 @@ type Engine struct {
 	Node   *raftInternal.AgentNode
 	health *health.Monitor
 	llm    llm.Client
-	// policy governs the agent's behavior
-	policy policy
 
 	// commandSender handles submitting logical commands (Vote/Answer) to Raft
 	commandSender CommandSender
@@ -44,10 +42,6 @@ func (d *defaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
 	return d.Raft.Apply(cmd, timeout).Error()
 }
 
-type policy struct {
-	VoteLogic func(task *core.Task) bool
-}
-
 // TaskFuture allows waiting for a task to be finalized
 type TaskFuture struct {
 	TaskID   string
@@ -66,19 +60,11 @@ func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
 
 func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client) *Engine {
 	return &Engine{
-		Node:   node,
-		health: health,
-		llm:    llm,
-		policy: policy{
-			VoteLogic: func(task *core.Task) bool { return true }, // Default auto-accept
-		},
+		Node:          node,
+		health:        health,
+		llm:           llm,
 		commandSender: &defaultCommandSender{Raft: node.Raft},
 	}
-}
-
-// SetVoteLogic sets the voting logic policy (for testing)
-func (e *Engine) SetVoteLogic(logic func(task *core.Task) bool) {
-	e.policy.VoteLogic = logic
 }
 
 // SetCommandSender sets the command sender (for testing/mocking)
@@ -256,12 +242,18 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	// Simulate "Broadcasting" vote request
 	// In reality each node receives the proposal, validates it, and votes.
 
-	shouldAccept := e.policy.VoteLogic(task)
+	// Use LLM to validate the proposal
+	isValid, err := e.llm.Validate(task.Content, task.Result)
+	if err != nil {
+		log.Printf("[%s] LLM validation failed: %v", e.Node.Config.ID, err)
+		// Decide default behavior on error. For now, assume reject if we can't validate.
+		isValid = false
+	}
 
 	vote := core.Vote{
 		TaskID:   task.ID,
 		AgentID:  string(e.Node.Config.ID),
-		Accepted: shouldAccept,
+		Accepted: isValid,
 	}
 
 	voteBytes, _ := json.Marshal(vote)
