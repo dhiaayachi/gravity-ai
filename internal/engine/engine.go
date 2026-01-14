@@ -31,6 +31,12 @@ type Engine struct {
 
 	// listeners for task completion (TaskID -> chan *core.Task)
 	listeners sync.Map
+
+	// timers for leader phases (TaskID -> *time.Timer)
+	timers sync.Map
+
+	ProposalTimeout time.Duration
+	VoteTimeout     time.Duration
 }
 
 // CommandSender defines the interface for submitting Raft commands
@@ -92,13 +98,15 @@ func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
 
 func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client) *Engine {
 	return &Engine{
-		Node:          node,
-		fsm:           node.FSM,
-		health:        health,
-		llm:           llm,
-		nodeConfig:    node.Config,
-		commandSender: &defaultCommandSender{Raft: node.Raft},
-		clusterState:  &defaultClusterState{Node: node},
+		Node:            node,
+		fsm:             node.FSM,
+		health:          health,
+		llm:             llm,
+		nodeConfig:      node.Config,
+		commandSender:   &defaultCommandSender{Raft: node.Raft},
+		clusterState:    &defaultClusterState{Node: node},
+		ProposalTimeout: 30 * time.Second,
+		VoteTimeout:     10 * time.Second,
 	}
 }
 
@@ -199,6 +207,7 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) notifyTaskCompletion(task *core.Task) {
+	e.stopTimer(task.ID) // Cleanup timer if any
 	if val, ok := e.listeners.Load(task.ID); ok {
 		ch := val.(chan *core.Task)
 		ch <- task
@@ -209,6 +218,12 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
 	log.Printf("[%s] Received task admission: %s. Starting local brainstorm.", e.nodeConfig.ID, task.ID)
+
+	// Start Proposal Timer (waiting for answers)
+	if e.clusterState.IsLeader() {
+		e.startTimer(task.ID, e.ProposalTimeout, "Brainstorming/Proposal phase exceeded")
+	}
+
 	// Every node participates in brainstorm
 	e.runBrainstormPhase(task)
 }
@@ -269,6 +284,11 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 
 	// 2. Aggregate Answers using LLM
 	log.Printf("[%s] Aggregating %d answers for task %s", e.nodeConfig.ID, len(answers), task.ID)
+
+	// Stop Proposal Timer as we are moving to next phase
+	e.stopTimer(task.ID)
+	// Start Vote Timer
+	e.startTimer(task.ID, e.VoteTimeout, "Voting phase exceeded")
 
 	var answerContents []string
 	for _, ans := range answers {
@@ -397,4 +417,44 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	e.commandSender.Apply(b, 5*time.Second)
 
 	// Notify listeners is done via EventTaskUpdated in the event loop
+}
+
+func (e *Engine) startTimer(taskID string, duration time.Duration, failMsg string) {
+	e.stopTimer(taskID) // Ensure no existing timer
+
+	timer := time.AfterFunc(duration, func() {
+		// Log timeout
+		log.Printf("[Timeout] Task %s reached timeout: %s", taskID, failMsg)
+
+		// Create failed task update
+		failedTask := &core.Task{
+			ID:     taskID,
+			Status: core.TaskStatusFailed,
+			Result: fmt.Sprintf("Timeout: %s", failMsg),
+		}
+
+		propBytes, _ := json.Marshal(failedTask)
+		cmd := raftInternal.LogCommand{
+			Type:  raftInternal.CommandTypeUpdateTask,
+			Value: propBytes,
+		}
+		b, _ := json.Marshal(cmd)
+
+		// Best effort application
+		if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
+			log.Printf("Failed to apply timeout failure for task %s: %v", taskID, err)
+		}
+
+		e.timers.Delete(taskID)
+	})
+
+	e.timers.Store(taskID, timer)
+}
+
+func (e *Engine) stopTimer(taskID string) {
+	if val, ok := e.timers.Load(taskID); ok {
+		timer := val.(*time.Timer)
+		timer.Stop()
+		e.timers.Delete(taskID)
+	}
 }

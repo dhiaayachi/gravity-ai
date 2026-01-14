@@ -277,6 +277,46 @@ func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 	h.cmdSender.mu.Unlock()
 }
 
+func TestFlow_Leader_Timeout(t *testing.T) {
+	h := newTestHarness()
+	h.engine.ProposalTimeout = 100 * time.Millisecond
+
+	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
+	h.fsm.Tasks.Store("t1", task)
+
+	// Simulate Admitted event which starts timer
+	h.engine.handleTaskAdmitted(task)
+
+	// Wait for timeout
+	time.Sleep(200 * time.Millisecond)
+
+	h.cmdSender.mu.Lock()
+	if len(h.cmdSender.cmds) < 1 { // Should have answer AND failure? No, handleTaskAdmitted submits answer, then timer fails it later
+		// Actually handleTaskAdmitted calls runBrainstormPhase which submits answer.
+		// Then timer fires.
+	}
+
+	// Check for failure command
+	foundFailure := false
+	for _, cmdBytes := range h.cmdSender.cmds {
+		var cmd raftInternal.LogCommand
+		json.Unmarshal(cmdBytes, &cmd)
+		if cmd.Type == raftInternal.CommandTypeUpdateTask {
+			var tUpd core.Task
+			json.Unmarshal(cmd.Value, &tUpd)
+			if tUpd.Status == core.TaskStatusFailed {
+				foundFailure = true
+				break
+			}
+		}
+	}
+	h.cmdSender.mu.Unlock()
+
+	if !foundFailure {
+		t.Error("Expected task failure due to timeout")
+	}
+}
+
 func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	h := newTestHarness()
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
