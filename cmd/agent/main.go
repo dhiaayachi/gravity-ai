@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
+	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
 )
@@ -18,6 +19,13 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8000", "Bind address")
 	dataDir := flag.String("data-dir", "./data", "Data directory")
 	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
+
+	// LLM Flags
+	provider := flag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
+	apiKey := flag.String("api-key", "", "API Key for cloud providers")
+	model := flag.String("model", "", "Model name (optional)")
+	ollamaHost := flag.String("ollama-url", "http://localhost:11434", "Ollama URL")
+
 	flag.Parse()
 
 	log.Printf("Starting Agent %s on %s...", *id, *addr)
@@ -36,7 +44,31 @@ func main() {
 	}
 
 	// Setup Dependencies
-	llmClient := &mocks.MockLLM{Healthy: true}
+	var llmClient llm.Client
+
+	switch *provider {
+	case "openai":
+		llmClient = llm.NewOpenAIClient(*apiKey, *model)
+	case "gemini":
+		client, err := llm.NewGeminiClient(*apiKey, *model)
+		if err != nil {
+			log.Fatalf("Failed to initialize Gemini client: %v", err)
+		}
+		llmClient = client
+	case "claude":
+		llmClient = llm.NewClaudeClient(*apiKey, *model)
+	case "ollama":
+		client, err := llm.NewOllamaClient(*ollamaHost, *model)
+		if err != nil {
+			log.Fatalf("Failed to initialize Ollama client: %v", err)
+		}
+		llmClient = client
+	case "mock":
+		llmClient = &mocks.MockLLM{Healthy: true}
+	default:
+		log.Fatalf("Unknown LLM provider: %s", *provider)
+	}
+
 	healthMonitor := health.NewMonitor(llmClient)
 	eng := engine.NewEngine(node, healthMonitor, llmClient)
 	eng.Start()
