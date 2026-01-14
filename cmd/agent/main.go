@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"time"
+	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
@@ -18,6 +19,7 @@ func main() {
 	id := flag.String("id", "agent-1", "Agent ID")
 	addr := flag.String("addr", "127.0.0.1:8000", "Bind address")
 	dataDir := flag.String("data-dir", "./data", "Data directory")
+	peersFlag := flag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001,node3=127.0.0.1:8002)")
 	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
 
 	// LLM Flags
@@ -30,12 +32,25 @@ func main() {
 
 	log.Printf("Starting Agent %s on %s...", *id, *addr)
 
+	// Parse Peers
+	peers := make(map[string]string)
+	if *peersFlag != "" {
+		importStrings := strings.Split(*peersFlag, ",")
+		for _, s := range importStrings {
+			parts := strings.Split(s, "=")
+			if len(parts) == 2 {
+				peers[parts[0]] = parts[1]
+			}
+		}
+	}
+
 	// Setup Raft Node
 	raftConfig := &raft.Config{
 		ID:        *id,
 		DataDir:   *dataDir,
 		BindAddr:  *addr,
 		Bootstrap: *bootstrap,
+		Peers:     peers,
 	}
 
 	node, err := raft.NewAgentNode(raftConfig)
@@ -73,22 +88,32 @@ func main() {
 	eng := engine.NewEngine(node, healthMonitor, llmClient)
 	eng.Start()
 
-	// Wait for leader
-	if *bootstrap {
-		log.Println("Waiting for leader election...")
-		time.Sleep(3 * time.Second) // Give some time for election
-
-		// Simulate Task Submission if we are leader
-		go func() {
-			time.Sleep(5 * time.Second)
-			log.Println("Submitting a test task...")
-			future, err := eng.SubmitTask("What is the meaning of life?", "user-1")
-			if err != nil {
-				log.Printf("Failed to submit task: %v", err)
-			} else {
-				log.Printf("Task submitted: %s", future.TaskID)
+	// Start HTTP Server for API/Admin
+	httpAddr := flag.String("http", ":8080", "HTTP Service address")
+	go func() {
+		http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
+			taskContent := r.URL.Query().Get("content")
+			if taskContent == "" {
+				http.Error(w, "missing content", http.StatusBadRequest)
+				return
 			}
-		}()
+			f, err := eng.SubmitTask(taskContent, "api-user")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(f.TaskID))
+		})
+
+		log.Printf("Starting HTTP API on %s", *httpAddr)
+		if err := http.ListenAndServe(*httpAddr, nil); err != nil {
+			log.Fatalf("HTTP Start failed: %v", err)
+		}
+	}()
+
+	// Wait for leader logic (Bootstrap only)
+	if *bootstrap {
+		log.Println("Node is bootstrapping...")
 	}
 
 	// Handle signals

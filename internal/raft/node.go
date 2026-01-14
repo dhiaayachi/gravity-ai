@@ -26,6 +26,7 @@ type Config struct {
 	DataDir   string
 	BindAddr  string
 	Bootstrap bool
+	Peers     map[string]string // ID -> Address
 }
 
 func NewAgentNode(cfg *Config) (*AgentNode, error) {
@@ -76,13 +77,22 @@ func NewAgentNode(cfg *Config) (*AgentNode, error) {
 
 	// Bootstrap if requested
 	if cfg.Bootstrap {
-		configuration := raft.Configuration{
-			Servers: []raft.Server{
-				{
-					ID:      raftConfig.LocalID,
-					Address: realTransport.LocalAddr(),
-				},
+		servers := []raft.Server{
+			{
+				ID:      raftConfig.LocalID,
+				Address: realTransport.LocalAddr(),
 			},
+		}
+
+		for peerID, peerAddr := range cfg.Peers {
+			servers = append(servers, raft.Server{
+				ID:      raft.ServerID(peerID),
+				Address: raft.ServerAddress(peerAddr),
+			})
+		}
+
+		configuration := raft.Configuration{
+			Servers: servers,
 		}
 		r.BootstrapCluster(configuration)
 	}
