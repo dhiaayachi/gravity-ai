@@ -1,0 +1,46 @@
+package core
+
+import "time"
+
+// TaskStatus represents the state of a task in the system
+type TaskStatus string
+
+const (
+	TaskStatusAdmitted   TaskStatus = "admitted"
+	TaskStatusBrainstorm TaskStatus = "brainstorm"
+	TaskStatusProposal   TaskStatus = "proposal"
+	TaskStatusVote       TaskStatus = "vote"
+	TaskStatusDone       TaskStatus = "done"
+	TaskStatusFailed     TaskStatus = "failed"
+)
+
+// Task represents a unit of work to be processed by the agents
+type Task struct {
+	ID        string     `json:"id"`
+	Content   string     `json:"content"`
+	Status    TaskStatus `json:"status"`
+	Requester string     `json:"requester"` // Could be user or another system
+	CreatedAt time.Time  `json:"created_at"`
+	Result    string     `json:"result,omitempty"`
+}
+
+// Answer represents a response from a single agent during Brainstorm phase
+type Answer struct {
+	TaskID   string `json:"task_id"`
+	AgentID  string `json:"agent_id"`
+	Content  string `json:"content"`
+}
+
+// Vote represents a vote from an agent during the Vote phase
+type Vote struct {
+	TaskID   string `json:"task_id"`
+	AgentID  string `json:"agent_id"`
+	Accepted bool   `json:"accepted"`
+}
+
+// AgentConfig represents the persistent state of an agent
+type AgentConfig struct {
+	ID         string `json:"id"`
+	Reputation int    `json:"reputation"`
+	Address    string `json:"address"` // Network address for Raft/RPC
+}
