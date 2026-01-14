@@ -7,6 +7,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/raft v1.7.3
 	github.com/hashicorp/raft-boltdb v0.0.0-20231211162105-6c830fa4535e
+	github.com/liushuangls/go-anthropic/v2 v2.17.0
+	github.com/ollama/ollama v0.14.0
 	github.com/sashabaranov/go-openai v1.41.2
 	google.golang.org/api v0.186.0
 )
@@ -28,7 +30,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
@@ -38,12 +39,9 @@ require (
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.0 // indirect
-	github.com/liushuangls/go-anthropic/v2 v2.17.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/ollama/ollama v0.14.0 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.51.0 // indirect
