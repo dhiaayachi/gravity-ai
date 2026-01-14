@@ -177,8 +177,12 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 	}
 
 	f.Tasks = sync.Map{}
+	f.Tasks = sync.Map{}
 	for k, v := range snapshot.Tasks {
-		f.Tasks.Store(k, v)
+		// Only restore active tasks
+		if v.Status != core.TaskStatusDone && v.Status != core.TaskStatusFailed {
+			f.Tasks.Store(k, v)
+		}
 	}
 
 	// Also need to handle TaskAnswers/Votes if we were persisting them

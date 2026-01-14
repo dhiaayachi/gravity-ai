@@ -190,8 +190,8 @@ func TestFSM_Restore(t *testing.T) {
 		t.Errorf("Reputation restore failed, got %v", val)
 	}
 
-	if val, ok := fsm.Tasks.Load("task1"); !ok || val.(*core.Task).Status != core.TaskStatusDone {
-		t.Errorf("Task restore failed")
+	if _, ok := fsm.Tasks.Load("task1"); ok {
+		t.Errorf("Task task1 should not have been restored (it was done)")
 	}
 }
 
