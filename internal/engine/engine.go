@@ -40,6 +40,7 @@ type defaultCommandSender struct {
 }
 
 func (d *defaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
+	log.Printf("[%s] Leader applying command", d.Raft.String())
 	return d.Raft.Apply(cmd, timeout).Error()
 }
 
@@ -181,18 +182,18 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
-	log.Printf("Received task admission: %s. Starting local brainstorm.", task.ID)
+	log.Printf("[%s] Received task admission: %s. Starting local brainstorm.", e.Node.Config.ID, task.ID)
 	// Every node participates in brainstorm
 	e.runBrainstormPhase(task)
 }
 
 func (e *Engine) runBrainstormPhase(task *core.Task) {
-	log.Printf("Starting Brainstorm phase for task %s", task.ID)
+	log.Printf("[%s] Starting Brainstorm phase for task %s", e.Node.Config.ID, task.ID)
 
 	// Simulate "Broadcasting" logic by just getting a local answer for now
 	ansContent, err := e.llm.Generate(task.Content)
 	if err != nil {
-		log.Printf("LLM generation failed: %v", err)
+		log.Printf("[%s] LLM generation failed: %v", e.Node.Config.ID, err)
 		return
 	}
 
@@ -210,13 +211,13 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("Failed to apply answer: %v", err)
+		log.Printf("[%s] Failed to apply answer: %v", e.Node.Config.ID, err)
 		return
 	}
 }
 
 func (e *Engine) runProposalPhase(task *core.Task) {
-	log.Printf("Starting Proposal phase for task %s", task.ID)
+	log.Printf("[%s] Starting Proposal phase for task %s", e.Node.Config.ID, task.ID)
 
 	// Retrieve answers (Reading from FSM state locally since we are leader)
 	var answers []core.Answer
@@ -225,7 +226,7 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	}
 
 	if len(answers) == 0 {
-		log.Printf("No answers received for task %s", task.ID)
+		log.Printf("[%s] No answers received for task %s", e.Node.Config.ID, task.ID)
 		return
 	}
 
@@ -244,13 +245,13 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("Failed to update task to proposal: %v", err)
+		log.Printf("[%s] Failed to update task to proposal: %v", e.Node.Config.ID, err)
 		return
 	}
 }
 
 func (e *Engine) runVotePhase(task *core.Task) {
-	log.Printf("Starting Vote phase for task %s", task.ID)
+	log.Printf("[%s] Starting Vote phase for task %s", e.Node.Config.ID, task.ID)
 
 	// Simulate "Broadcasting" vote request
 	// In reality each node receives the proposal, validates it, and votes.
@@ -271,7 +272,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 
 	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("Failed to submit vote: %v", err)
+		log.Printf("[%s] Failed to submit vote: %v", e.Node.Config.ID, err)
 		return
 	}
 }
@@ -294,7 +295,7 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	// Calculate Quorum
 	cfg := e.Node.Raft.GetConfiguration()
 	if err := cfg.Error(); err != nil {
-		log.Printf("Failed to get raft configuration: %v", err)
+		log.Printf("[%s] Failed to get raft configuration: %v", e.Node.Config.ID, err)
 		return
 	}
 	serverCount := len(cfg.Configuration().Servers)
@@ -318,11 +319,11 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	var finalStatus core.TaskStatus
 
 	if accepted >= quorum {
-		log.Printf("Consensus reached for task %s (Votes: %d/%d). Accepted.", task.ID, accepted, serverCount)
+		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). Accepted.", e.Node.Config.ID, task.ID, accepted, serverCount)
 		finalStatus = core.TaskStatusDone
 		// TODO: Increment leader reputation
 	} else if rejected >= quorum {
-		log.Printf("Consensus reached for task %s (Votes: %d/%d). REJECTED.", task.ID, rejected, serverCount)
+		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). REJECTED.", e.Node.Config.ID, task.ID, rejected, serverCount)
 		finalStatus = core.TaskStatusFailed
 		// TODO: Decrement leader reputation & trigger election
 	} else {

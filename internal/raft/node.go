@@ -30,7 +30,7 @@ type Config struct {
 
 func NewAgentNode(cfg *Config) (*AgentNode, error) {
 	// Setup FSM
-	fsm := NewFSM()
+	fsm := NewFSM(cfg.ID)
 
 	// Setup Config
 	raftConfig := raft.DefaultConfig()

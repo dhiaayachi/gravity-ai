@@ -13,6 +13,7 @@ import (
 
 // FSM is the state machine for the Raft system
 type FSM struct {
+	NodeID      string
 	Reputations sync.Map // AgentID -> int
 	Tasks       sync.Map // TaskID -> *core.Task
 	TaskAnswers sync.Map // TaskID -> []core.Answer
@@ -36,8 +37,9 @@ type Event struct {
 	Data interface{}
 }
 
-func NewFSM() *FSM {
+func NewFSM(nodeID string) *FSM {
 	return &FSM{
+		NodeID:  nodeID,
 		EventCh: make(chan Event, 100),
 	}
 }
@@ -62,13 +64,13 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 			return fmt.Errorf("failed to unmarshal task: %w", err)
 		}
 		f.Tasks.Store(task.ID, &task)
-		log.Printf("Task admitted: %s", task.ID)
+		log.Printf("[%s] Task admitted: %s", f.NodeID, task.ID)
 
 		// Notify
 		select {
 		case f.EventCh <- Event{Type: EventTaskAdmitted, Data: &task}:
 		default:
-			log.Println("FSM EventCh full, dropping event")
+			log.Printf("[%s] FSM EventCh full, dropping event", f.NodeID)
 		}
 
 	case CommandTypeSubmitAnswer:

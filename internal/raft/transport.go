@@ -49,7 +49,7 @@ func (t *ReputationTransport) run() {
 
 			if localRep > candidateRep {
 				// Reject vote
-				log.Printf("[INFO] Rejecting vote from %s (Rep: %d) because local rep (%d) is higher", req.Candidate, candidateRep, localRep)
+				log.Printf("[%s] Rejecting vote from %s (Rep: %d) because local rep (%d) is higher", t.localID, req.Candidate, candidateRep, localRep)
 				rpc.Respond(&raft.RequestVoteResponse{
 					Term:    req.Term,
 					Granted: false,
