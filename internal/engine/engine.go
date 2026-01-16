@@ -311,7 +311,14 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 		return
 	}
 
-	err = e.clusterClient.SubmitAnswer(context.Background(), e.nodeConfig.ID, task.ID, string(e.nodeConfig.ID), ansContent)
+	// Get leader address
+	leaderAddr := e.clusterState.GetLeaderAddr()
+	if leaderAddr == "" {
+		log.Printf("[%s] Cannot submit answer: No leader known", e.nodeConfig.ID)
+		return
+	}
+
+	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, string(e.nodeConfig.ID), ansContent)
 	if err != nil {
 		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, err)
 		return

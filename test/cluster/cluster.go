@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -10,17 +11,19 @@ import (
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
-	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft" // Added import
+	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/hashicorp/raft"
+	"github.com/soheilhy/cmux"
 )
 
 // Cluster represents a managed set of Raft nodes and Engines for testing
 type Cluster struct {
-	Nodes   []*raftInternal.AgentNode
-	Engines []*engine.Engine
-	Dirs    []string
-	Sender  *TestCommandSender
-	T       *testing.T
+	Nodes     []*raftInternal.AgentNode
+	Engines   []*engine.Engine
+	Dirs      []string
+	Listeners []net.Listener
+	Sender    *TestCommandSender
+	T         *testing.T
 }
 
 // TestCommandSender implements engine.CommandSender by forwarding to the leader
@@ -39,10 +42,11 @@ func (s *TestCommandSender) Apply(cmd []byte, timeout time.Duration) error {
 
 // Setup creates a new cluster with the specified node count, base port, and voting policy.
 // It initializes nodes, engines, handles leader join, and returns the Cluster struct.
-func Setup(t *testing.T, count int, grpcPort int, basePort int, mockFactory func(nodeIndex int) llm.Client) *Cluster {
+func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int) llm.Client) *Cluster {
 	var nodes []*raftInternal.AgentNode
 	var dirs []string
 	var engines []*engine.Engine
+	var listeners []net.Listener
 
 	// Pre-calculate peers
 	peers := make(map[string]string)
@@ -61,13 +65,11 @@ func Setup(t *testing.T, count int, grpcPort int, basePort int, mockFactory func
 		dir, _ := os.MkdirTemp("", id)
 		dirs = append(dirs, dir)
 
-		// Create peers map for this node (exclude self? hashicorp raft usually expects peers to include self or not?
-		// My implementation in node.go iterates config.Peers and appends to self.
-		// So peers map should contain OTHERS.
-		nodePeers := make(map[string]raftInternal.Peer)
+		// Create peers map for this node
+		nodePeers := make(map[string]string)
 		for pid, paddr := range peers {
 			if pid != id {
-				nodePeers[pid] = raftInternal.Peer{RaftAddr: paddr}
+				nodePeers[pid] = paddr
 			}
 		}
 
@@ -79,17 +81,44 @@ func Setup(t *testing.T, count int, grpcPort int, basePort int, mockFactory func
 			Peers:     nodePeers,
 		}
 
-		node, err := raftInternal.NewAgentNode(cfg)
+		// Create Listener
+		lis, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Fatalf("Failed to listen on %s: %v", addr, err)
+		}
+		listeners = append(listeners, lis)
+
+		// Create cmux
+		m := cmux.New(lis)
+		grpcL := m.Match(cmux.HTTP2())
+		raftL := m.Match(cmux.Any())
+
+		node, err := raftInternal.NewAgentNode(cfg, raftL)
 		if err != nil {
 			t.Fatalf("Failed to create node %s: %v", id, err)
 		}
 
 		// Mock LLM setup via factory
 		mockLLM := mockFactory(i)
-		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(grpcPort))
+		// Client no longer needs port
+		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(0))
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)
+
+		// Start gRPC server
+		grpcServer := agentGrpc.NewServer(eng, node, port)
+		if err := grpcServer.Start(grpcL); err != nil {
+			t.Fatalf("Failed to start gRPC server for %s: %v", id, err)
+		}
+
+		// Start cmux
+		go func() {
+			if err := m.Serve(); err != nil {
+				// Log error but check if closed
+				// fmt.Printf("cmux error: %v\n", err)
+			}
+		}()
 	}
 
 	// Inject Proxy CommandSender
@@ -105,11 +134,12 @@ func Setup(t *testing.T, count int, grpcPort int, basePort int, mockFactory func
 	time.Sleep(5 * time.Second)
 
 	return &Cluster{
-		Nodes:   nodes,
-		Engines: engines,
-		Dirs:    dirs,
-		Sender:  proxySender,
-		T:       t,
+		Nodes:     nodes,
+		Engines:   engines,
+		Dirs:      dirs,
+		Listeners: listeners,
+		Sender:    proxySender,
+		T:         t,
 	}
 }
 
@@ -120,6 +150,9 @@ func (c *Cluster) Close() {
 	}
 	for _, d := range c.Dirs {
 		os.RemoveAll(d)
+	}
+	for _, l := range c.Listeners {
+		l.Close()
 	}
 }
 

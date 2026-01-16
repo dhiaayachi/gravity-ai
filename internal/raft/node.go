@@ -26,15 +26,10 @@ type Config struct {
 	DataDir   string
 	BindAddr  string
 	Bootstrap bool
-	Peers     map[string]Peer // ID -> Address
+	Peers     map[string]string // ID -> Address
 }
 
-type Peer struct {
-	RaftAddr string
-	GrpcAddr string
-}
-
-func NewAgentNode(cfg *Config) (*AgentNode, error) {
+func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 	// Setup FSM
 	fsm := NewFSM(cfg.ID)
 
@@ -62,15 +57,12 @@ func NewAgentNode(cfg *Config) (*AgentNode, error) {
 		return nil, fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// Setup Transport
-	addr, err := net.ResolveTCPAddr("tcp", cfg.BindAddr)
-	if err != nil {
-		return nil, err
-	}
-	realTransport, err := raft.NewTCPTransport(cfg.BindAddr, addr, 3, 10*time.Second, os.Stderr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create transport: %w", err)
-	}
+	// Setup Transport using StreamLayer and existing listener
+	streamLayer := NewStreamLayer(listener)
+
+	// We use NewNetworkTransport with the stream layer
+	// MaxPool: 3, Timeout: 10s, LogOutput: os.Stderr
+	realTransport := raft.NewNetworkTransport(streamLayer, 3, 10*time.Second, os.Stderr)
 
 	transport := NewReputationTransport(realTransport, fsm, cfg.ID)
 
@@ -92,7 +84,7 @@ func NewAgentNode(cfg *Config) (*AgentNode, error) {
 		for peerID, peerAddr := range cfg.Peers {
 			servers = append(servers, raft.Server{
 				ID:      raft.ServerID(peerID),
-				Address: raft.ServerAddress(peerAddr.RaftAddr),
+				Address: raft.ServerAddress(peerAddr),
 			})
 		}
 

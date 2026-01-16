@@ -18,14 +18,14 @@ import (
 func TestClusterScenarios(t *testing.T) {
 	// Scenario 1: 3 nodes, All Agree
 	t.Run("3 Nodes - All Agree", func(t *testing.T) {
-		runScenario(t, 3, 50051, 20000, "task-agree", func(i int) llm.Client {
+		runScenario(t, 3, 20000, "task-agree", func(i int) llm.Client {
 			return mocks.NewYesMock()
 		}, core.TaskStatusDone)
 	})
 
 	// Scenario 2: 3 nodes, 2 Agree, 1 Disagree -> Accepted (Majority)
 	t.Run("3 Nodes - 2 Agree 1 Disagree", func(t *testing.T) {
-		runScenario(t, 3, 50052, 20010, "task-majority", func(i int) llm.Client {
+		runScenario(t, 3, 20010, "task-majority", func(i int) llm.Client {
 			// e.g. Node 2 disagree
 			if i == 2 {
 				return mocks.NewNoMock()
@@ -36,7 +36,7 @@ func TestClusterScenarios(t *testing.T) {
 
 	// Scenario 3: 3 nodes, 1 Agree (Leader), 2 Disagree -> Rejected
 	t.Run("3 Nodes - 1 Agree 2 Disagree", func(t *testing.T) {
-		runScenario(t, 3, 50053, 20020, "task-rejected", func(i int) llm.Client {
+		runScenario(t, 3, 20020, "task-rejected", func(i int) llm.Client {
 			// Leader is usually node-0 in bootstrap
 			if i == 0 {
 				return mocks.NewYesMock()
@@ -46,9 +46,9 @@ func TestClusterScenarios(t *testing.T) {
 	})
 }
 
-func runScenario(t *testing.T, count int, grpcPort int, basePort int, taskContent string, mockFactory func(int) llm.Client, expectedStatus core.TaskStatus) {
+func runScenario(t *testing.T, count int, basePort int, taskContent string, mockFactory func(int) llm.Client, expectedStatus core.TaskStatus) {
 	// 1. Setup Cluster
-	c := cluster.Setup(t, count, grpcPort, basePort, mockFactory)
+	c := cluster.Setup(t, count, basePort, mockFactory)
 	defer c.Close()
 
 	// 2. Submit Task to Leader

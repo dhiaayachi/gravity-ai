@@ -8,12 +8,15 @@ import (
 	"os/signal"
 	"strings"
 
+	"net"
+
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
+	"github.com/soheilhy/cmux"
 )
 
 func main() {
@@ -23,7 +26,6 @@ func main() {
 	peersFlag := flag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001,node3=127.0.0.1:8002)")
 	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
 	httpAddr := flag.String("http", ":8080", "HTTP Service address")
-	grpcPort := flag.Int("grpc-port", 50051, "gRPC Service port")
 
 	// LLM Flags
 	provider := flag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
@@ -36,13 +38,13 @@ func main() {
 	log.Printf("Starting Agent %s on %s...", *id, *addr)
 
 	// Parse Peers
-	peers := make(map[string]raft.Peer)
+	peers := make(map[string]string)
 	if *peersFlag != "" {
 		importStrings := strings.Split(*peersFlag, ",")
 		for _, s := range importStrings {
 			parts := strings.Split(s, "=")
 			if len(parts) == 2 {
-				peers[parts[0]] = raft.Peer{RaftAddr: parts[1]}
+				peers[parts[0]] = parts[1]
 			}
 		}
 	}
@@ -53,6 +55,21 @@ func main() {
 		log.Printf("Starting node (no bootstrap)")
 	}
 
+	// Create the main listener
+	lis, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatalf("failed to listen on %s: %v", *addr, err)
+	}
+
+	// Create cmux
+	m := cmux.New(lis)
+
+	// Match connections
+	// gRPC (look for HTTP2 with gRPC content type)
+	grpcL := m.Match(cmux.HTTP2())
+	// Raft (Any other traffic - Fallback)
+	raftL := m.Match(cmux.Any())
+
 	// Setup Raft Node
 	raftConfig := &raft.Config{
 		ID:        *id,
@@ -62,7 +79,7 @@ func main() {
 		Peers:     peers,
 	}
 
-	node, err := raft.NewAgentNode(raftConfig)
+	node, err := raft.NewAgentNode(raftConfig, raftL)
 	if err != nil {
 		log.Fatalf("Failed to create raft node: %v", err)
 	}
@@ -94,10 +111,18 @@ func main() {
 	}
 
 	healthMonitor := health.NewMonitor(llmClient)
-	clusterClient := agentGrpc.NewClient(*grpcPort)
+	// We pass 0 as port or remove port dependency in client next
+	clusterClient := agentGrpc.NewClient(0)
 	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient)
 
 	eng.Start()
+
+	// Start cmux serving
+	go func() {
+		if err := m.Serve(); err != nil {
+			log.Fatalf("cmux failed: %v", err)
+		}
+	}()
 
 	// Start HTTP Server for API/Admin
 	go func() {
@@ -122,8 +147,9 @@ func main() {
 	}()
 
 	// Start gRPC Server
-	grpcServer := agentGrpc.NewServer(eng, node, *grpcPort)
-	if err := grpcServer.Start(); err != nil {
+	// We ignore grpcPort flag and use the muxed listener
+	grpcServer := agentGrpc.NewServer(eng, node, 0) // Port is irrelevant for muxed listener but might be used for logging
+	if err := grpcServer.Start(grpcL); err != nil {
 		log.Fatalf("Failed to start gRPC server: %v", err)
 	}
 
