@@ -13,7 +13,9 @@ services:
       - HTTP_ADDR=:8080
       - DATA_DIR=/data
       - BOOTSTRAP=true
+      - BOOTSTRAP_EXPECT=3
       - PEERS=node2=node2:8000,node3=node3:8000
+      - CLEAN=true
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:
@@ -33,6 +35,7 @@ services:
       - DATA_DIR=/data
       - BOOTSTRAP=false
       - PEERS=node1=node1:8000,node3=node3:8000
+      - CLEAN=true
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:
@@ -52,6 +55,7 @@ services:
       - DATA_DIR=/data
       - BOOTSTRAP=false
       - PEERS=node1=node1:8000,node2=node2:8000
+      - CLEAN=true
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:

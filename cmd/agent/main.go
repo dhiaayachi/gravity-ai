@@ -45,6 +45,12 @@ func main() {
 		}
 	}
 
+	if *bootstrap {
+		log.Printf("Bootstrapping cluster with %d peers", len(peers))
+	} else {
+		log.Printf("Starting node (no bootstrap)")
+	}
+
 	// Setup Raft Node
 	raftConfig := &raft.Config{
 		ID:        *id,

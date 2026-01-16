@@ -9,16 +9,22 @@
 : "${LLM_PROVIDER:=mock}"
 : "${API_KEY:=}"
 : "${PEERS:=}"
+: "${CLEAN:=false}"
+
+if [ "$CLEAN" = "true" ]; then
+  echo "Cleaning data directory..."
+  rm -rf "$DATA_DIR"/*
+fi
 
 echo "Starting Agent $AGENT_ID..."
 
 # Start in foreground (or background but wait for it)
 ./gravity-agent \
-  -id "$AGENT_ID" \
-  -addr "$BIND_ADDR" \
-  -http "$HTTP_ADDR" \
-  -data-dir "$DATA_DIR" \
-  -bootstrap "$BOOTSTRAP" \
-  -peers "$PEERS" \
-  -llm-provider "$LLM_PROVIDER" \
-  -api-key "$API_KEY"
+  -id="$AGENT_ID" \
+  -addr="$BIND_ADDR" \
+  -http="$HTTP_ADDR" \
+  -data-dir="$DATA_DIR" \
+  -bootstrap="$BOOTSTRAP" \
+  -peers="$PEERS" \
+  -llm-provider="$LLM_PROVIDER" \
+  -api-key="$API_KEY"
