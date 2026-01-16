@@ -116,5 +116,8 @@ func (a *AgentNode) Close() error {
 	if err := a.stableStore.Close(); err != nil {
 		return err
 	}
+	if err := a.Transport.Close(); err != nil {
+		return err
+	}
 	return nil
 }

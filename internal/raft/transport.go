@@ -83,3 +83,11 @@ func (t *ReputationTransport) run() {
 		t.ch <- rpc
 	}
 }
+
+// Close closes the transport
+func (t *ReputationTransport) Close() error {
+	if closer, ok := t.Transport.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
