@@ -25,12 +25,12 @@ type Engine struct {
 	llm        llm.Client
 	nodeConfig *raftInternal.Config // For ID
 
-	// Interfaces for mocking
-	commandSender CommandSender
+	clusterClient ClusterClient
 	clusterState  ClusterState
 
 	// listeners for task completion (TaskID -> chan *core.Task)
 	listeners sync.Map
+	// ... (omitted)
 
 	// timers for leader phases (TaskID -> *time.Timer)
 	// timers for leader phases (TaskID -> *time.Timer)
@@ -43,25 +43,17 @@ type Engine struct {
 	VoteTimeout     time.Duration
 }
 
-// CommandSender defines the interface for submitting Raft commands
-type CommandSender interface {
-	Apply(cmd []byte, timeout time.Duration) error
+// ClusterClient defines the interface for communicating with other agents
+type ClusterClient interface {
+	SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error
 }
 
 // ClusterState defines the interface for querying cluster status
 type ClusterState interface {
 	IsLeader() bool
+	GetLeaderAddr() string
 	GetFormattedID() string // For logging
 	GetServerCount() (int, error)
-}
-
-type defaultCommandSender struct {
-	Raft *raft.Raft
-}
-
-func (d *defaultCommandSender) Apply(cmd []byte, timeout time.Duration) error {
-	f := d.Raft.Apply(cmd, timeout)
-	return f.Error()
 }
 
 type defaultClusterState struct {
@@ -70,6 +62,10 @@ type defaultClusterState struct {
 
 func (d *defaultClusterState) IsLeader() bool {
 	return d.Node.Raft.State() == raft.Leader
+}
+
+func (d *defaultClusterState) GetLeaderAddr() string {
+	return string(d.Node.Raft.Leader())
 }
 
 func (d *defaultClusterState) GetFormattedID() string {
@@ -107,7 +103,6 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		health:          health,
 		llm:             llm,
 		nodeConfig:      node.Config,
-		commandSender:   &defaultCommandSender{Raft: node.Raft},
 		clusterState:    &defaultClusterState{Node: node},
 		timerCh:         make(chan string, 100),
 		ProposalTimeout: 30 * time.Second,
@@ -115,9 +110,9 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 	}
 }
 
-// SetCommandSender sets the command sender (for testing/mocking)
-func (e *Engine) SetCommandSender(sender CommandSender) {
-	e.commandSender = sender
+// SetClusterClient sets the cluster client
+func (e *Engine) SetClusterClient(client ClusterClient) {
+	e.clusterClient = client
 }
 
 // SetClusterState sets the cluster state (for testing/mocking)
@@ -161,9 +156,9 @@ func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, erro
 		return nil, err
 	}
 
-	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
 		e.listeners.Delete(taskID)
-		return nil, err
+		return nil, f.Error()
 	}
 
 	return &TaskFuture{
@@ -199,7 +194,8 @@ func (e *Engine) SubmitAnswer(taskID, agentID, content string) error {
 		return err
 	}
 
-	return e.commandSender.Apply(b, 5*time.Second)
+	f := e.Node.Raft.Apply(b, 5*time.Second)
+	return f.Error()
 }
 
 // SubmitVote handles vote submission
@@ -229,7 +225,8 @@ func (e *Engine) SubmitVote(taskID, agentID string, accepted bool) error {
 		return err
 	}
 
-	return e.commandSender.Apply(b, 5*time.Second)
+	f := e.Node.Raft.Apply(b, 5*time.Second)
+	return f.Error()
 }
 
 func (e *Engine) Start() {
@@ -325,8 +322,8 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, err)
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, f.Error())
 		return
 	}
 }
@@ -397,8 +394,8 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to update task to proposal: %v", e.nodeConfig.ID, err)
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+		log.Printf("[%s] Failed to update task to proposal: %v", e.nodeConfig.ID, f.Error())
 		return
 	}
 }
@@ -414,22 +411,57 @@ func (e *Engine) runVotePhase(task *core.Task) {
 		isValid = false
 	}
 
-	vote := core.Vote{
-		TaskID:   task.ID,
-		AgentID:  string(e.nodeConfig.ID),
-		Accepted: isValid,
-	}
+	// 1. If Leader, apply directly
+	if e.clusterState.IsLeader() {
+		vote := core.Vote{
+			TaskID:   task.ID,
+			AgentID:  string(e.nodeConfig.ID),
+			Accepted: isValid,
+		}
 
-	voteBytes, _ := json.Marshal(vote)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeSubmitVote,
-		Value: voteBytes,
-	}
-	b, _ := json.Marshal(cmd)
+		voteBytes, _ := json.Marshal(vote)
+		cmd := raftInternal.LogCommand{
+			Type:  raftInternal.CommandTypeSubmitVote,
+			Value: voteBytes,
+		}
+		b, _ := json.Marshal(cmd)
 
-	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("[%s] Failed to submit vote: %v", e.nodeConfig.ID, err)
+		if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+			log.Printf("[%s] Failed to submit vote (leader): %v", e.nodeConfig.ID, f.Error())
+		}
 		return
+	}
+
+	// 2. If Follower, submit to leader via gRPC
+	// We need the leader address.
+	// We can't easily get the leader TCP address from Raft object directly if it's not exposed in ClusterState?
+	// ClusterState interface needs to expose Leader Address?
+	// defaultClusterState uses e.Node.Raft.Leader().
+	// But ClusterState only has IsLeader().
+	// We can add GetLeaderAddr to ClusterState. Or cast internal node.
+
+	// Let's rely on e.Node.Raft for now via a cast or update ClusterState interface.
+	// Updating ClusterState interface is cleaner.
+
+	// BUT, wait. e.Node is public in Engine struct. We can access it directly?
+	// Yes, `e.Node.Raft.Leader()`.
+
+	leaderAddr := e.clusterState.GetLeaderAddr()
+	if leaderAddr == "" {
+		log.Printf("[%s] Cannot vote: No leader known", e.nodeConfig.ID)
+		return
+	}
+
+	if e.clusterClient == nil {
+		log.Printf("[%s] Cannot vote: ClusterClient not initialized", e.nodeConfig.ID)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := e.clusterClient.SubmitVote(ctx, leaderAddr, task.ID, string(e.nodeConfig.ID), isValid); err != nil {
+		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
 }
 
@@ -496,7 +528,10 @@ func (e *Engine) finalizeTask(task *core.Task) {
 		Value: taskBytes,
 	}
 	b, _ := json.Marshal(cmd)
-	e.commandSender.Apply(b, 5*time.Second)
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+		// Just log error
+		log.Printf("[%s] Failed to apply update task: %v", e.nodeConfig.ID, f.Error())
+	}
 
 	// Notify listeners is done via EventTaskUpdated in the event loop
 }
@@ -568,8 +603,8 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 	}
 	b, _ := json.Marshal(cmd)
 
-	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-		log.Printf("Failed to apply timeout failure for task %s: %v", taskID, err)
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+		log.Printf("Failed to apply timeout failure for task %s: %v", taskID, f.Error())
 	}
 }
 

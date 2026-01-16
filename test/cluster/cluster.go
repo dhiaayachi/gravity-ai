@@ -94,7 +94,6 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 	// Inject Proxy CommandSender
 	proxySender := &TestCommandSender{Engines: engines}
 	for _, eng := range engines {
-		eng.SetCommandSender(proxySender)
 		eng.Start() // Start event loop now
 	}
 

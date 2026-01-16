@@ -95,6 +95,10 @@ func main() {
 
 	healthMonitor := health.NewMonitor(llmClient)
 	eng := engine.NewEngine(node, healthMonitor, llmClient)
+
+	clusterClient := agentGrpc.NewClient(*grpcPort)
+	eng.SetClusterClient(clusterClient)
+
 	eng.Start()
 
 	// Start HTTP Server for API/Admin
