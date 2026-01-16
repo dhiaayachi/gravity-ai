@@ -86,7 +86,9 @@ func newTestHarness() *testHarness {
 
 	// Use bare struct initialization as NewEngine requires *AgentNode which is hard to mock entirely
 	// We only populate what's needed for logic if we inject dependencies
-	eng := &Engine{}
+	eng := &Engine{
+		timerCh: make(chan string, 100),
+	}
 	eng.SetCommandSender(cmdSender)
 	eng.SetClusterState(cluster)
 
@@ -171,13 +173,14 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	h.fsm.TaskAnswers.Store("t1", []core.Answer{
 		{TaskID: "t1", Content: "ans1"},
 		{TaskID: "t1", Content: "ans2"},
+		{TaskID: "t1", Content: "ans3"},
 	})
 
 	// Trigger event (simulation of Engine.Start loop logic)
 	// We call the handler method directly if we extract it, or simulate logic.
 	// Engine.Start loop calls `e.runProposalPhase(task)` if `EventAnswerSubmitted` and Leader.
 
-	h.engine.runProposalPhase(task)
+	h.engine.runProposalPhase(task, false)
 
 	h.cmdSender.mu.Lock()
 	if len(h.cmdSender.cmds) != 1 {
@@ -279,6 +282,7 @@ func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 
 func TestFlow_Leader_Timeout(t *testing.T) {
 	h := newTestHarness()
+	h.engine.Start()
 	h.engine.ProposalTimeout = 100 * time.Millisecond
 
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
@@ -288,7 +292,7 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 	h.engine.handleTaskAdmitted(task)
 
 	// Wait for timeout
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	h.cmdSender.mu.Lock()
 	if len(h.cmdSender.cmds) < 1 { // Should have answer AND failure? No, handleTaskAdmitted submits answer, then timer fails it later
@@ -380,6 +384,7 @@ func TestEngine_Start(t *testing.T) {
 	h.fsm.TaskAnswers.Store("t1", []core.Answer{
 		*ans,
 		{TaskID: "t1", Content: "ans2", AgentID: "node2"},
+		{TaskID: "t1", Content: "ans3", AgentID: "node3"},
 	})
 	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventAnswerSubmitted, Data: ans}
 

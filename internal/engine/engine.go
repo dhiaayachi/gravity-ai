@@ -33,7 +33,11 @@ type Engine struct {
 	listeners sync.Map
 
 	// timers for leader phases (TaskID -> *time.Timer)
+	// timers for leader phases (TaskID -> *time.Timer)
 	timers sync.Map
+
+	// timerCh receives taskIDs for processing timeouts
+	timerCh chan string
 
 	ProposalTimeout time.Duration
 	VoteTimeout     time.Duration
@@ -105,6 +109,7 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		nodeConfig:      node.Config,
 		commandSender:   &defaultCommandSender{Raft: node.Raft},
 		clusterState:    &defaultClusterState{Node: node},
+		timerCh:         make(chan string, 100),
 		ProposalTimeout: 30 * time.Second,
 		VoteTimeout:     10 * time.Second,
 	}
@@ -229,41 +234,50 @@ func (e *Engine) SubmitVote(taskID, agentID string, accepted bool) error {
 
 func (e *Engine) Start() {
 	go func() {
-		for event := range e.fsm.EventCh {
-			switch event.Type {
-			case raftInternal.EventTaskAdmitted:
-				task := event.Data.(*core.Task)
-				e.handleTaskAdmitted(task)
-			case raftInternal.EventAnswerSubmitted:
-				// If leader, check if we can move to Proposal
-				if e.clusterState.IsLeader() {
-					ans := event.Data.(*core.Answer)
-					// Get task for validation
-					if val, ok := e.fsm.Tasks.Load(ans.TaskID); ok {
-						task := val.(*core.Task)
-						e.runProposalPhase(task)
-					}
-				}
-			case raftInternal.EventTaskUpdated:
-				task := event.Data.(*core.Task)
-				switch task.Status {
-				case core.TaskStatusDone, core.TaskStatusFailed:
-					e.notifyTaskCompletion(task)
-				case core.TaskStatusProposal:
-					// All nodes vote
-					e.runVotePhase(task)
-				}
-			case raftInternal.EventVoteSubmitted:
-				if e.clusterState.IsLeader() {
-					vote := event.Data.(*core.Vote)
-					if val, ok := e.fsm.Tasks.Load(vote.TaskID); ok {
-						task := val.(*core.Task)
-						e.finalizeTask(task)
-					}
-				}
+		for {
+			select {
+			case event := <-e.fsm.EventCh:
+				e.handleRaftEvent(event)
+			case taskID := <-e.timerCh:
+				e.handleTaskTimeout(taskID)
 			}
 		}
 	}()
+}
+
+func (e *Engine) handleRaftEvent(event raftInternal.Event) {
+	switch event.Type {
+	case raftInternal.EventTaskAdmitted:
+		task := event.Data.(*core.Task)
+		e.handleTaskAdmitted(task)
+	case raftInternal.EventAnswerSubmitted:
+		// If leader, check if we can move to Proposal
+		if e.clusterState.IsLeader() {
+			ans := event.Data.(*core.Answer)
+			// Get task for validation
+			if val, ok := e.fsm.Tasks.Load(ans.TaskID); ok {
+				task := val.(*core.Task)
+				e.runProposalPhase(task, false)
+			}
+		}
+	case raftInternal.EventTaskUpdated:
+		task := event.Data.(*core.Task)
+		switch task.Status {
+		case core.TaskStatusDone, core.TaskStatusFailed:
+			e.notifyTaskCompletion(task)
+		case core.TaskStatusProposal:
+			// All nodes vote
+			e.runVotePhase(task)
+		}
+	case raftInternal.EventVoteSubmitted:
+		if e.clusterState.IsLeader() {
+			vote := event.Data.(*core.Vote)
+			if val, ok := e.fsm.Tasks.Load(vote.TaskID); ok {
+				task := val.(*core.Task)
+				e.finalizeTask(task)
+			}
+		}
+	}
 }
 
 func (e *Engine) notifyTaskCompletion(task *core.Task) {
@@ -281,7 +295,7 @@ func (e *Engine) handleTaskAdmitted(task *core.Task) {
 
 	// Start Proposal Timer (waiting for answers)
 	if e.clusterState.IsLeader() {
-		e.startTimer(task.ID, e.ProposalTimeout, "Brainstorming/Proposal phase exceeded")
+		e.startTimer(task.ID, e.ProposalTimeout)
 	}
 
 	// Every node participates in brainstorm as a worker agent
@@ -317,8 +331,12 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	}
 }
 
-func (e *Engine) runProposalPhase(task *core.Task) {
-	log.Printf("[%s] Starting Proposal phase for task %s", e.nodeConfig.ID, task.ID)
+func (e *Engine) runProposalPhase(task *core.Task, force bool) {
+	// Guard: Only run proposal phase if task is in Admitted state.
+	// This prevents redundant aggregation when multiple answers arrive after quorum is met.
+	if task.Status != core.TaskStatusAdmitted {
+		return
+	}
 
 	// Retrieve answers (Reading from FSM state locally since we are leader)
 	var answers []core.Answer
@@ -326,7 +344,7 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 		answers = val.([]core.Answer)
 	}
 
-	// 1. Quorum Check
+	// 1. Check Participation
 	serverCount, err := e.clusterState.GetServerCount()
 	if err != nil {
 		log.Printf("[%s] Failed to get server count: %v", e.nodeConfig.ID, err)
@@ -337,10 +355,17 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	}
 	quorum := serverCount/2 + 1
 
-	if len(answers) < quorum {
-		log.Printf("[%s] Not enough answers for task %s (Has: %d, Need: %d)", e.nodeConfig.ID, task.ID, len(answers), quorum)
+	// Logic: Proceed if All Answered OR (Quorum Answered AND Force/Timeout)
+	if len(answers) == serverCount {
+		// Proceed immediately
+	} else if len(answers) >= quorum && force {
+		// Proceed on timeout with partial results
+	} else {
+		// Wait
 		return
 	}
+
+	log.Printf("[%s] Starting Proposal phase for task %s", e.nodeConfig.ID, task.ID)
 
 	// 2. Aggregate Answers using LLM
 	log.Printf("[%s] Aggregating %d answers for task %s", e.nodeConfig.ID, len(answers), task.ID)
@@ -348,7 +373,7 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 	// Stop Proposal Timer as we are moving to next phase
 	e.stopTimer(task.ID)
 	// Start Vote Timer
-	e.startTimer(task.ID, e.VoteTimeout, "Voting phase exceeded")
+	e.startTimer(task.ID, e.VoteTimeout)
 
 	var answerContents []string
 	for _, ans := range answers {
@@ -380,9 +405,6 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 
 func (e *Engine) runVotePhase(task *core.Task) {
 	log.Printf("[%s] Validating and casting vote for task %s", e.nodeConfig.ID, task.ID)
-
-	// Simulate "Broadcasting" vote request
-	// In reality each node receives the proposal, validates it, and votes.
 
 	// Use LLM to validate the proposal
 	isValid, err := e.llm.Validate(task.Content, task.Result)
@@ -479,36 +501,76 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	// Notify listeners is done via EventTaskUpdated in the event loop
 }
 
-func (e *Engine) startTimer(taskID string, duration time.Duration, failMsg string) {
+func (e *Engine) startTimer(taskID string, duration time.Duration) {
 	e.stopTimer(taskID) // Ensure no existing timer
 
 	timer := time.AfterFunc(duration, func() {
-		// Log timeout
-		log.Printf("[Timeout] Task %s reached timeout: %s", taskID, failMsg)
-
-		// Create failed task update
-		failedTask := &core.Task{
-			ID:     taskID,
-			Status: core.TaskStatusFailed,
-			Result: fmt.Sprintf("Timeout: %s", failMsg),
-		}
-
-		propBytes, _ := json.Marshal(failedTask)
-		cmd := raftInternal.LogCommand{
-			Type:  raftInternal.CommandTypeUpdateTask,
-			Value: propBytes,
-		}
-		b, _ := json.Marshal(cmd)
-
-		// Best effort application
-		if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
-			log.Printf("Failed to apply timeout failure for task %s: %v", taskID, err)
-		}
-
 		e.timers.Delete(taskID)
+		e.timerCh <- taskID
 	})
 
 	e.timers.Store(taskID, timer)
+}
+
+func (e *Engine) handleTaskTimeout(taskID string) {
+	log.Printf("[%s] Timeout triggered for task %s", e.nodeConfig.ID, taskID)
+	e.timers.Delete(taskID)
+
+	// Check task status
+	var task *core.Task
+	if val, ok := e.fsm.Tasks.Load(taskID); ok {
+		task = val.(*core.Task)
+	} else {
+		return // Task not found
+	}
+
+	if task.Status == core.TaskStatusAdmitted {
+		// Proposal Timeout
+		if e.clusterState.IsLeader() {
+			// Check if we have enough answers to force proposal
+			var answers []core.Answer
+			if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
+				answers = val.([]core.Answer)
+			}
+
+			serverCount, err := e.clusterState.GetServerCount()
+			if err != nil {
+				log.Printf("[%s] Failed to get server count: %v", e.nodeConfig.ID, err)
+				return
+			}
+			quorum := serverCount/2 + 1
+
+			if len(answers) >= quorum {
+				e.runProposalPhase(task, true)
+				return // Successfully triggered or tried
+			}
+
+			// If not enough answers, fall through to failure logic
+		}
+	}
+
+	// Fallthrough for failure (Voting timeout or Brainstorming timeout with < Quorum)
+	// Default failure behavior for other states (e.g. Voting)
+	failMsg := "Phase timeout exceeded"
+	log.Printf("[Timeout] Task %s reached timeout: %s", taskID, failMsg)
+
+	// Create failed task update
+	failedTask := &core.Task{
+		ID:     taskID,
+		Status: core.TaskStatusFailed,
+		Result: fmt.Sprintf("Timeout: %s", failMsg),
+	}
+
+	propBytes, _ := json.Marshal(failedTask)
+	cmd := raftInternal.LogCommand{
+		Type:  raftInternal.CommandTypeUpdateTask,
+		Value: propBytes,
+	}
+	b, _ := json.Marshal(cmd)
+
+	if err := e.commandSender.Apply(b, 5*time.Second); err != nil {
+		log.Printf("Failed to apply timeout failure for task %s: %v", taskID, err)
+	}
 }
 
 func (e *Engine) stopTimer(taskID string) {
