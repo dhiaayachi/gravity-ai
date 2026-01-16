@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/hashicorp/raft"
-	raftboltdb "github.com/hashicorp/raft-boltdb"
+	raftwal "github.com/hashicorp/raft-wal"
 )
 
 type AgentNode struct {
@@ -17,8 +16,8 @@ type AgentNode struct {
 	Transport *ReputationTransport
 	Config    *Config
 	// Keep stores to close them
-	logStore    *raftboltdb.BoltStore
-	stableStore *raftboltdb.BoltStore
+	logStore    *raftwal.WAL
+	stableStore *raftwal.WAL
 }
 
 type Config struct {
@@ -42,14 +41,9 @@ func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
 	}
 
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(cfg.DataDir, "raft-log.bolt"))
+	logStore, err := raftwal.Open(cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log store: %w", err)
-	}
-
-	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(cfg.DataDir, "raft-stable.bolt"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stable store: %w", err)
 	}
 
 	snapStore, err := raft.NewFileSnapshotStore(cfg.DataDir, 2, os.Stderr)
@@ -67,7 +61,7 @@ func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 	transport := NewReputationTransport(realTransport, fsm, cfg.ID)
 
 	// Create Raft
-	r, err := raft.NewRaft(raftConfig, fsm, logStore, stableStore, snapStore, transport)
+	r, err := raft.NewRaft(raftConfig, fsm, logStore, logStore, snapStore, transport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
@@ -100,7 +94,7 @@ func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 		Transport:   transport,
 		Config:      cfg,
 		logStore:    logStore,
-		stableStore: stableStore,
+		stableStore: logStore,
 	}, nil
 }
 
@@ -117,6 +111,9 @@ func (a *AgentNode) Close() error {
 		return err
 	}
 	if err := a.Transport.Close(); err != nil {
+		return err
+	}
+	if err := a.logStore.Close(); err != nil {
 		return err
 	}
 	return nil
