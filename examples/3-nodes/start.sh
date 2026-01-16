@@ -10,6 +10,7 @@
 : "${API_KEY:=}"
 : "${PEERS:=}"
 : "${CLEAN:=false}"
+: "${LLM_MODEL:=}"
 
 if [ "$CLEAN" = "true" ]; then
   echo "Cleaning data directory..."
@@ -27,4 +28,5 @@ echo "Starting Agent $AGENT_ID..."
   -bootstrap="$BOOTSTRAP" \
   -peers="$PEERS" \
   -llm-provider="$LLM_PROVIDER" \
-  -api-key="$API_KEY"
+  -api-key="$API_KEY" \
+  -model="$LLM_MODEL"
