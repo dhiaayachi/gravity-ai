@@ -43,6 +43,15 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 	var dirs []string
 	var engines []*engine.Engine
 
+	// Pre-calculate peers
+	peers := make(map[string]string)
+	for i := 0; i < count; i++ {
+		id := fmt.Sprintf("node-%d", i)
+		port := basePort + i
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
+		peers[id] = addr
+	}
+
 	// Create nodes and engines
 	for i := 0; i < count; i++ {
 		id := fmt.Sprintf("node-%d", i)
@@ -51,11 +60,22 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		dir, _ := os.MkdirTemp("", id)
 		dirs = append(dirs, dir)
 
+		// Create peers map for this node (exclude self? hashicorp raft usually expects peers to include self or not?
+		// My implementation in node.go iterates config.Peers and appends to self.
+		// So peers map should contain OTHERS.
+		nodePeers := make(map[string]string)
+		for pid, paddr := range peers {
+			if pid != id {
+				nodePeers[pid] = paddr
+			}
+		}
+
 		cfg := &raftInternal.Config{
 			ID:        id,
 			DataDir:   dir,
 			BindAddr:  addr,
-			Bootstrap: i == 0,
+			Bootstrap: i == 0, // Only 0 bootstraps
+			Peers:     nodePeers,
 		}
 
 		node, err := raftInternal.NewAgentNode(cfg)
@@ -80,14 +100,6 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 	// Wait for leader (Bootstrap node 0)
 	time.Sleep(3 * time.Second)
-
-	// Join others to 0
-	for i := 1; i < count; i++ {
-		err := nodes[0].Raft.AddVoter(raft.ServerID(nodes[i].Config.ID), raft.ServerAddress(nodes[i].Config.BindAddr), 0, 0).Error()
-		if err != nil {
-			t.Fatalf("Failed to join node %d: %v", i, err)
-		}
-	}
 
 	// Wait for cluster to stabilize
 	time.Sleep(5 * time.Second)

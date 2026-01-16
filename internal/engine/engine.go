@@ -284,12 +284,12 @@ func (e *Engine) handleTaskAdmitted(task *core.Task) {
 		e.startTimer(task.ID, e.ProposalTimeout, "Brainstorming/Proposal phase exceeded")
 	}
 
-	// Every node participates in brainstorm
+	// Every node participates in brainstorm as a worker agent
 	e.runBrainstormPhase(task)
 }
 
 func (e *Engine) runBrainstormPhase(task *core.Task) {
-	log.Printf("[%s] Starting Brainstorm phase for task %s", e.nodeConfig.ID, task.ID)
+	log.Printf("[%s] Contributing to Brainstorm for task %s", e.nodeConfig.ID, task.ID)
 
 	// Simulate "Broadcasting" logic by just getting a local answer for now
 	ansContent, err := e.llm.Generate(task.Content)
@@ -379,7 +379,7 @@ func (e *Engine) runProposalPhase(task *core.Task) {
 }
 
 func (e *Engine) runVotePhase(task *core.Task) {
-	log.Printf("[%s] Starting Vote phase for task %s", e.nodeConfig.ID, task.ID)
+	log.Printf("[%s] Validating and casting vote for task %s", e.nodeConfig.ID, task.ID)
 
 	// Simulate "Broadcasting" vote request
 	// In reality each node receives the proposal, validates it, and votes.
