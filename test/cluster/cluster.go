@@ -20,6 +20,7 @@ import (
 type Cluster struct {
 	Nodes     []*raftInternal.AgentNode
 	Engines   []*engine.Engine
+	Services  []*agentGrpc.AgentService
 	Dirs      []string
 	Listeners []net.Listener
 	Sender    *TestCommandSender
@@ -46,6 +47,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 	var nodes []*raftInternal.AgentNode
 	var dirs []string
 	var engines []*engine.Engine
+	var services []*agentGrpc.AgentService
 	var listeners []net.Listener
 
 	// Pre-calculate peers
@@ -106,8 +108,12 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		nodes = append(nodes, node)
 		engines = append(engines, eng)
 
+		svc := agentGrpc.NewAgentService(node.Raft, eng)
+
+		services = append(services, svc)
+
 		// Start gRPC server
-		grpcServer := agentGrpc.NewServer(eng, node, port)
+		grpcServer := agentGrpc.NewServer(svc, node, port)
 		if err := grpcServer.Start(grpcL); err != nil {
 			t.Fatalf("Failed to start gRPC server for %s: %v", id, err)
 		}
@@ -136,6 +142,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 	return &Cluster{
 		Nodes:     nodes,
 		Engines:   engines,
+		Services:  services,
 		Dirs:      dirs,
 		Listeners: listeners,
 		Sender:    proxySender,
@@ -157,11 +164,11 @@ func (c *Cluster) Close() {
 }
 
 // GetLeader returns the Engine of the current Raft leader
-func (c *Cluster) GetLeader() (*engine.Engine, error) {
+func (c *Cluster) GetLeader() (*agentGrpc.AgentService, error) {
 	for _, n := range c.Nodes {
 		if n.Raft.State() == raft.Leader {
 			// Find corresponding engine
-			for _, e := range c.Engines {
+			for i, e := range c.Engines {
 				if e.Node.Config.ID == n.Config.ID {
 					// Wait for Leader to see all nodes (Full Quorum Visibility)
 					// This ensures Quorum calculation is correct inside Engine
@@ -170,7 +177,7 @@ func (c *Cluster) GetLeader() (*engine.Engine, error) {
 						cfg := e.Node.Raft.GetConfiguration().Configuration()
 						if len(cfg.Servers) == len(c.Nodes) {
 							fmt.Printf("GetLeader: Leader sees %d nodes. Proceeding.\n", len(c.Nodes))
-							return e, nil
+							return c.Services[i], nil
 						}
 						select {
 						case <-timeoutCfg:
@@ -187,12 +194,12 @@ func (c *Cluster) GetLeader() (*engine.Engine, error) {
 }
 
 // SubmitTask submits a task to the cluster leader logic
-func (c *Cluster) SubmitTask(content string) (*engine.TaskFuture, error) {
+func (c *Cluster) SubmitTask(content string) (*agentGrpc.TaskFuture, error) {
 	leader, err := c.GetLeader()
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("Submitting task to leader: %s\n", leader.Node.Config.ID)
+	fmt.Printf("Submitting task to leader")
 	return leader.SubmitTask(content, "tester")
 }

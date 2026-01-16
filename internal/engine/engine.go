@@ -12,7 +12,6 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
-	"github.com/google/uuid"
 	"github.com/hashicorp/raft"
 )
 
@@ -81,22 +80,6 @@ func (d *defaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-// TaskFuture allows waiting for a task to be finalized
-type TaskFuture struct {
-	TaskID   string
-	resultCh <-chan *core.Task
-}
-
-// Await blocks until the task is finalized or context is cancelled
-func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
-	select {
-	case task := <-f.resultCh:
-		return task, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
 func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient) *Engine {
 	return &Engine{
 		Node:            node,
@@ -120,115 +103,6 @@ func (e *Engine) SetClusterClient(client ClusterClient) {
 // SetClusterState sets the cluster state (for testing/mocking)
 func (e *Engine) SetClusterState(state ClusterState) {
 	e.clusterState = state
-}
-
-// SubmitTask handles a new task submission and returns a future, called from the leader
-func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, error) {
-	if !e.clusterState.IsLeader() {
-		return nil, fmt.Errorf("not leader")
-	}
-
-	taskID := uuid.New().String()
-	task := &core.Task{
-		ID:        taskID,
-		Content:   content,
-		Status:    core.TaskStatusAdmitted,
-		Requester: requester,
-		CreatedAt: time.Now(),
-	}
-
-	// Register listener
-	ch := make(chan *core.Task, 1)
-	e.listeners.Store(taskID, ch)
-
-	taskBytes, err := json.Marshal(task)
-	if err != nil {
-		e.listeners.Delete(taskID)
-		return nil, err
-	}
-
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeAdmitTask,
-		Value: taskBytes,
-	}
-
-	b, err := json.Marshal(cmd)
-	if err != nil {
-		e.listeners.Delete(taskID)
-		return nil, err
-	}
-
-	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		e.listeners.Delete(taskID)
-		return nil, f.Error()
-	}
-
-	return &TaskFuture{
-		TaskID:   taskID,
-		resultCh: ch,
-	}, nil
-}
-
-// SubmitAnswer handles answer submission
-func (e *Engine) SubmitAnswer(taskID, agentID, content string) error {
-	if !e.clusterState.IsLeader() {
-		return fmt.Errorf("not leader")
-	}
-
-	answer := &core.Answer{
-		TaskID:  taskID,
-		AgentID: agentID,
-		Content: content,
-	}
-
-	answerBytes, err := json.Marshal(answer)
-	if err != nil {
-		return err
-	}
-
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeSubmitAnswer,
-		Value: answerBytes,
-	}
-
-	b, err := json.Marshal(cmd)
-	if err != nil {
-		return err
-	}
-
-	f := e.Node.Raft.Apply(b, 5*time.Second)
-	return f.Error()
-}
-
-// SubmitVote handles vote submission
-func (e *Engine) SubmitVote(taskID, agentID string, accepted bool) error {
-	if !e.clusterState.IsLeader() {
-		return fmt.Errorf("not leader")
-	}
-
-	vote := &core.Vote{
-		TaskID:   taskID,
-		AgentID:  agentID,
-		Accepted: accepted,
-	}
-
-	voteBytes, err := json.Marshal(vote)
-	if err != nil {
-		return err
-	}
-
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeSubmitVote,
-		Value: voteBytes,
-	}
-
-	b, err := json.Marshal(cmd)
-	if err != nil {
-		return err
-	}
-
-	f := e.Node.Raft.Apply(b, 5*time.Second)
-	return f.Error()
 }
 
 func (e *Engine) Start() {
@@ -263,7 +137,7 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 		task := event.Data.(*core.Task)
 		switch task.Status {
 		case core.TaskStatusDone, core.TaskStatusFailed:
-			e.notifyTaskCompletion(task)
+			e.NotifyTaskCompletion(task)
 		case core.TaskStatusProposal:
 			// All nodes vote
 			e.runVotePhase(task)
@@ -279,7 +153,7 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 	}
 }
 
-func (e *Engine) notifyTaskCompletion(task *core.Task) {
+func (e *Engine) NotifyTaskCompletion(task *core.Task) {
 	e.stopTimer(task.ID) // Cleanup timer if any
 	if val, ok := e.listeners.Load(task.ID); ok {
 		ch := val.(chan *core.Task)
@@ -287,6 +161,14 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 		close(ch)
 		e.listeners.Delete(task.ID)
 	}
+}
+
+func (e *Engine) AddTask(task string, ch chan *core.Task) {
+	e.listeners.Store(task, ch)
+}
+
+func (e *Engine) DeleteTask(task *core.Task) {
+	e.listeners.Store(task.ID, task)
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {

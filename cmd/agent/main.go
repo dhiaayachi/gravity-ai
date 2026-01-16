@@ -124,6 +124,14 @@ func main() {
 		}
 	}()
 
+	svc := agentGrpc.NewAgentService(node.Raft, eng)
+	// Start gRPC Server
+	// We ignore grpcPort flag and use the muxed listener
+	grpcServer := agentGrpc.NewServer(svc, node, 0) // Port is irrelevant for muxed listener but might be used for logging
+	if err := grpcServer.Start(grpcL); err != nil {
+		log.Fatalf("Failed to start gRPC server: %v", err)
+	}
+
 	// Start HTTP Server for API/Admin
 	go func() {
 		http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +140,7 @@ func main() {
 				http.Error(w, "missing content", http.StatusBadRequest)
 				return
 			}
-			f, err := eng.SubmitTask(taskContent, "api-user")
+			f, err := svc.SubmitTask(taskContent, "api-user")
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -145,13 +153,6 @@ func main() {
 			log.Fatalf("HTTP Start failed: %v", err)
 		}
 	}()
-
-	// Start gRPC Server
-	// We ignore grpcPort flag and use the muxed listener
-	grpcServer := agentGrpc.NewServer(eng, node, 0) // Port is irrelevant for muxed listener but might be used for logging
-	if err := grpcServer.Start(grpcL); err != nil {
-		log.Fatalf("Failed to start gRPC server: %v", err)
-	}
 
 	// Wait for leader logic (Bootstrap only)
 	if *bootstrap {

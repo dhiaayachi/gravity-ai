@@ -208,38 +208,6 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	}
 }
 
-func TestSubmitTask(t *testing.T) {
-	h := newTestHarness(t, &mockClusterClient{})
-
-	// 1. Success case
-	future, err := h.engine.SubmitTask("Task content", "user1")
-	if err != nil {
-		t.Fatalf("SubmitTask failed: %v", err)
-	}
-	if future == nil {
-		t.Fatal("Future is nil")
-	}
-
-	// Wait for Apply to happen via Raft (async)
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify Task in FSM
-	if _, ok := h.fsm.Tasks.Load(future.TaskID); !ok {
-		// Wait a bit more?
-		time.Sleep(200 * time.Millisecond)
-		if _, ok := h.fsm.Tasks.Load(future.TaskID); !ok {
-			t.Error("Task not found in FSM after SubmitTask")
-		}
-	}
-
-	// 2. Not leader
-	h.cluster.isLeader = false
-	_, err = h.engine.SubmitTask("Task content", "user1")
-	if err == nil {
-		t.Error("Expected error when not leader")
-	}
-}
-
 func TestFlow_TaskAdmitted_Brainstorm(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	h.cluster.isLeader = false // Follower also participates

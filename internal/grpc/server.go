@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 
-	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	pb "github.com/dhiaayachi/gravity-ai/proto/gravity/v1"
 	hashicorpRaft "github.com/hashicorp/raft"
@@ -16,17 +15,17 @@ import (
 
 type Server struct {
 	pb.UnimplementedGravityServiceServer
-	engine *engine.Engine
-	node   *raft.AgentNode
-	port   int
-	server *grpc.Server
+	service *AgentService
+	node    *raft.AgentNode
+	port    int
+	server  *grpc.Server
 }
 
-func NewServer(eng *engine.Engine, node *raft.AgentNode, port int) *Server {
+func NewServer(svc *AgentService, node *raft.AgentNode, port int) *Server {
 	return &Server{
-		engine: eng,
-		node:   node,
-		port:   port,
+		service: svc,
+		node:    node,
+		port:    port,
 	}
 }
 
@@ -77,7 +76,7 @@ func (s *Server) SubmitTask(ctx context.Context, req *pb.SubmitTaskRequest) (*pb
 		return response, err
 	}
 
-	future, err := s.engine.SubmitTask(req.Content, req.Requester)
+	future, err := s.service.SubmitTask(req.Content, req.Requester)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +95,7 @@ func (s *Server) SubmitAnswer(ctx context.Context, req *pb.SubmitAnswerRequest) 
 	}
 
 	// Using Engine.SubmitAnswer as proxy for Proposal in this architecture
-	err := s.engine.SubmitAnswer(req.TaskId, req.AgentId, req.Content)
+	err := s.service.SubmitAnswer(req.TaskId, req.AgentId, req.Content)
 	if err != nil {
 		return &pb.SubmitAnswerResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -112,7 +111,7 @@ func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb
 		return response, err
 	}
 
-	err := s.engine.SubmitVote(req.TaskId, req.AgentId, req.Accepted)
+	err := s.service.SubmitVote(req.TaskId, req.AgentId, req.Accepted)
 	if err != nil {
 		return &pb.SubmitVoteResponse{Success: false, Message: err.Error()}, nil
 	}
