@@ -106,8 +106,8 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		nodeConfig:      node.Config,
 		clusterState:    &defaultClusterState{Node: node},
 		timerCh:         make(chan string, 100),
-		ProposalTimeout: 30 * time.Second,
-		VoteTimeout:     10 * time.Second,
+		ProposalTimeout: 60 * time.Second,
+		VoteTimeout:     60 * time.Second,
 		clusterClient:   clusterClient,
 	}
 }
@@ -504,10 +504,12 @@ func (e *Engine) finalizeTask(task *core.Task) {
 
 	if accepted >= quorum {
 		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). Accepted.", e.nodeConfig.ID, task.ID, accepted, serverCount)
+		log.Printf("[%s] Final accepted response: %s", e.nodeConfig.ID, task.Result)
 		finalStatus = core.TaskStatusDone
 		// TODO: Increment leader reputation
 	} else if rejected >= quorum {
 		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). REJECTED.", e.nodeConfig.ID, task.ID, rejected, serverCount)
+		log.Printf("[%s] Final rejected response: %s", e.nodeConfig.ID, task.Result)
 		finalStatus = core.TaskStatusFailed
 		// TODO: Decrement leader reputation & trigger election
 	} else {
