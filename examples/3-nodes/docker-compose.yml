@@ -19,7 +19,7 @@ services:
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:
-      - "8081:8080"
+      - "8080:8080"
     volumes:
       - node1-data:/data
 
@@ -39,7 +39,7 @@ services:
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:
-      - "8082:8080"
+      - "8081:8080"
     volumes:
       - node2-data:/data
 
@@ -59,7 +59,7 @@ services:
       - LLM_PROVIDER=gemini
       - API_KEY=${GEMINI_API_KEY}
     ports:
-      - "8083:8080"
+      - "8082:8080"
     volumes:
       - node3-data:/data
 
