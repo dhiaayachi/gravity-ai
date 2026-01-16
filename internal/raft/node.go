@@ -26,7 +26,12 @@ type Config struct {
 	DataDir   string
 	BindAddr  string
 	Bootstrap bool
-	Peers     map[string]string // ID -> Address
+	Peers     map[string]Peer // ID -> Address
+}
+
+type Peer struct {
+	RaftAddr string
+	GrpcAddr string
 }
 
 func NewAgentNode(cfg *Config) (*AgentNode, error) {
@@ -87,7 +92,7 @@ func NewAgentNode(cfg *Config) (*AgentNode, error) {
 		for peerID, peerAddr := range cfg.Peers {
 			servers = append(servers, raft.Server{
 				ID:      raft.ServerID(peerID),
-				Address: raft.ServerAddress(peerAddr),
+				Address: raft.ServerAddress(peerAddr.RaftAddr),
 			})
 		}
 

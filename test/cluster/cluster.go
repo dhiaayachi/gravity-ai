@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
+	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft" // Added import
@@ -38,7 +39,7 @@ func (s *TestCommandSender) Apply(cmd []byte, timeout time.Duration) error {
 
 // Setup creates a new cluster with the specified node count, base port, and voting policy.
 // It initializes nodes, engines, handles leader join, and returns the Cluster struct.
-func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int) llm.Client) *Cluster {
+func Setup(t *testing.T, count int, grpcPort int, basePort int, mockFactory func(nodeIndex int) llm.Client) *Cluster {
 	var nodes []*raftInternal.AgentNode
 	var dirs []string
 	var engines []*engine.Engine
@@ -63,10 +64,10 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		// Create peers map for this node (exclude self? hashicorp raft usually expects peers to include self or not?
 		// My implementation in node.go iterates config.Peers and appends to self.
 		// So peers map should contain OTHERS.
-		nodePeers := make(map[string]string)
+		nodePeers := make(map[string]raftInternal.Peer)
 		for pid, paddr := range peers {
 			if pid != id {
-				nodePeers[pid] = paddr
+				nodePeers[pid] = raftInternal.Peer{RaftAddr: paddr}
 			}
 		}
 
@@ -85,7 +86,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		// Mock LLM setup via factory
 		mockLLM := mockFactory(i)
-		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM)
+		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(grpcPort))
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)

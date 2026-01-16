@@ -36,13 +36,13 @@ func main() {
 	log.Printf("Starting Agent %s on %s...", *id, *addr)
 
 	// Parse Peers
-	peers := make(map[string]string)
+	peers := make(map[string]raft.Peer)
 	if *peersFlag != "" {
 		importStrings := strings.Split(*peersFlag, ",")
 		for _, s := range importStrings {
 			parts := strings.Split(s, "=")
 			if len(parts) == 2 {
-				peers[parts[0]] = parts[1]
+				peers[parts[0]] = raft.Peer{RaftAddr: parts[1]}
 			}
 		}
 	}
@@ -94,10 +94,8 @@ func main() {
 	}
 
 	healthMonitor := health.NewMonitor(llmClient)
-	eng := engine.NewEngine(node, healthMonitor, llmClient)
-
 	clusterClient := agentGrpc.NewClient(*grpcPort)
-	eng.SetClusterClient(clusterClient)
+	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient)
 
 	eng.Start()
 

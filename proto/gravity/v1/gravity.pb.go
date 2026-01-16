@@ -229,7 +229,7 @@ func (x *SubmitVoteResponse) GetMessage() string {
 	return ""
 }
 
-type SubmitProposalRequest struct {
+type SubmitAnswerRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -238,20 +238,20 @@ type SubmitProposalRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubmitProposalRequest) Reset() {
-	*x = SubmitProposalRequest{}
+func (x *SubmitAnswerRequest) Reset() {
+	*x = SubmitAnswerRequest{}
 	mi := &file_proto_gravity_v1_gravity_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubmitProposalRequest) String() string {
+func (x *SubmitAnswerRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubmitProposalRequest) ProtoMessage() {}
+func (*SubmitAnswerRequest) ProtoMessage() {}
 
-func (x *SubmitProposalRequest) ProtoReflect() protoreflect.Message {
+func (x *SubmitAnswerRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_gravity_v1_gravity_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -263,33 +263,33 @@ func (x *SubmitProposalRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubmitProposalRequest.ProtoReflect.Descriptor instead.
-func (*SubmitProposalRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SubmitAnswerRequest.ProtoReflect.Descriptor instead.
+func (*SubmitAnswerRequest) Descriptor() ([]byte, []int) {
 	return file_proto_gravity_v1_gravity_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *SubmitProposalRequest) GetTaskId() string {
+func (x *SubmitAnswerRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
 	}
 	return ""
 }
 
-func (x *SubmitProposalRequest) GetAgentId() string {
+func (x *SubmitAnswerRequest) GetAgentId() string {
 	if x != nil {
 		return x.AgentId
 	}
 	return ""
 }
 
-func (x *SubmitProposalRequest) GetContent() string {
+func (x *SubmitAnswerRequest) GetContent() string {
 	if x != nil {
 		return x.Content
 	}
 	return ""
 }
 
-type SubmitProposalResponse struct {
+type SubmitAnswerResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
@@ -297,20 +297,20 @@ type SubmitProposalResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubmitProposalResponse) Reset() {
-	*x = SubmitProposalResponse{}
+func (x *SubmitAnswerResponse) Reset() {
+	*x = SubmitAnswerResponse{}
 	mi := &file_proto_gravity_v1_gravity_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubmitProposalResponse) String() string {
+func (x *SubmitAnswerResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubmitProposalResponse) ProtoMessage() {}
+func (*SubmitAnswerResponse) ProtoMessage() {}
 
-func (x *SubmitProposalResponse) ProtoReflect() protoreflect.Message {
+func (x *SubmitAnswerResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_gravity_v1_gravity_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -322,19 +322,19 @@ func (x *SubmitProposalResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubmitProposalResponse.ProtoReflect.Descriptor instead.
-func (*SubmitProposalResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SubmitAnswerResponse.ProtoReflect.Descriptor instead.
+func (*SubmitAnswerResponse) Descriptor() ([]byte, []int) {
 	return file_proto_gravity_v1_gravity_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *SubmitProposalResponse) GetSuccess() bool {
+func (x *SubmitAnswerResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
 	}
 	return false
 }
 
-func (x *SubmitProposalResponse) GetMessage() string {
+func (x *SubmitAnswerResponse) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
@@ -358,20 +358,20 @@ const file_proto_gravity_v1_gravity_proto_rawDesc = "" +
 	"\baccepted\x18\x03 \x01(\bR\baccepted\"H\n" +
 	"\x12SubmitVoteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"e\n" +
-	"\x15SubmitProposalRequest\x12\x17\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"c\n" +
+	"\x13SubmitAnswerRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\tR\acontent\"L\n" +
-	"\x16SubmitProposalResponse\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\tR\acontent\"J\n" +
+	"\x14SubmitAnswerResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage2\x83\x02\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xfd\x01\n" +
 	"\x0eGravityService\x12K\n" +
 	"\n" +
 	"SubmitTask\x12\x1d.gravity.v1.SubmitTaskRequest\x1a\x1e.gravity.v1.SubmitTaskResponse\x12K\n" +
 	"\n" +
-	"SubmitVote\x12\x1d.gravity.v1.SubmitVoteRequest\x1a\x1e.gravity.v1.SubmitVoteResponse\x12W\n" +
-	"\x0eSubmitProposal\x12!.gravity.v1.SubmitProposalRequest\x1a\".gravity.v1.SubmitProposalResponseB=Z;github.com/dhiaayachi/gravity-ai/proto/gravity/v1;gravityv1b\x06proto3"
+	"SubmitVote\x12\x1d.gravity.v1.SubmitVoteRequest\x1a\x1e.gravity.v1.SubmitVoteResponse\x12Q\n" +
+	"\fSubmitAnswer\x12\x1f.gravity.v1.SubmitAnswerRequest\x1a .gravity.v1.SubmitAnswerResponseB=Z;github.com/dhiaayachi/gravity-ai/proto/gravity/v1;gravityv1b\x06proto3"
 
 var (
 	file_proto_gravity_v1_gravity_proto_rawDescOnce sync.Once
@@ -387,20 +387,20 @@ func file_proto_gravity_v1_gravity_proto_rawDescGZIP() []byte {
 
 var file_proto_gravity_v1_gravity_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_gravity_v1_gravity_proto_goTypes = []any{
-	(*SubmitTaskRequest)(nil),      // 0: gravity.v1.SubmitTaskRequest
-	(*SubmitTaskResponse)(nil),     // 1: gravity.v1.SubmitTaskResponse
-	(*SubmitVoteRequest)(nil),      // 2: gravity.v1.SubmitVoteRequest
-	(*SubmitVoteResponse)(nil),     // 3: gravity.v1.SubmitVoteResponse
-	(*SubmitProposalRequest)(nil),  // 4: gravity.v1.SubmitProposalRequest
-	(*SubmitProposalResponse)(nil), // 5: gravity.v1.SubmitProposalResponse
+	(*SubmitTaskRequest)(nil),    // 0: gravity.v1.SubmitTaskRequest
+	(*SubmitTaskResponse)(nil),   // 1: gravity.v1.SubmitTaskResponse
+	(*SubmitVoteRequest)(nil),    // 2: gravity.v1.SubmitVoteRequest
+	(*SubmitVoteResponse)(nil),   // 3: gravity.v1.SubmitVoteResponse
+	(*SubmitAnswerRequest)(nil),  // 4: gravity.v1.SubmitAnswerRequest
+	(*SubmitAnswerResponse)(nil), // 5: gravity.v1.SubmitAnswerResponse
 }
 var file_proto_gravity_v1_gravity_proto_depIdxs = []int32{
 	0, // 0: gravity.v1.GravityService.SubmitTask:input_type -> gravity.v1.SubmitTaskRequest
 	2, // 1: gravity.v1.GravityService.SubmitVote:input_type -> gravity.v1.SubmitVoteRequest
-	4, // 2: gravity.v1.GravityService.SubmitProposal:input_type -> gravity.v1.SubmitProposalRequest
+	4, // 2: gravity.v1.GravityService.SubmitAnswer:input_type -> gravity.v1.SubmitAnswerRequest
 	1, // 3: gravity.v1.GravityService.SubmitTask:output_type -> gravity.v1.SubmitTaskResponse
 	3, // 4: gravity.v1.GravityService.SubmitVote:output_type -> gravity.v1.SubmitVoteResponse
-	5, // 5: gravity.v1.GravityService.SubmitProposal:output_type -> gravity.v1.SubmitProposalResponse
+	5, // 5: gravity.v1.GravityService.SubmitAnswer:output_type -> gravity.v1.SubmitAnswerResponse
 	3, // [3:6] is the sub-list for method output_type
 	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name

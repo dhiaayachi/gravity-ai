@@ -46,6 +46,7 @@ type Engine struct {
 // ClusterClient defines the interface for communicating with other agents
 type ClusterClient interface {
 	SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error
+	SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, content string) error
 }
 
 // ClusterState defines the interface for querying cluster status
@@ -96,7 +97,7 @@ func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
 	}
 }
 
-func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client) *Engine {
+func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
@@ -107,6 +108,7 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		timerCh:         make(chan string, 100),
 		ProposalTimeout: 30 * time.Second,
 		VoteTimeout:     10 * time.Second,
+		clusterClient:   clusterClient,
 	}
 }
 
@@ -309,21 +311,9 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 		return
 	}
 
-	answer := core.Answer{
-		TaskID:  task.ID,
-		AgentID: string(e.nodeConfig.ID),
-		Content: ansContent,
-	}
-
-	ansBytes, _ := json.Marshal(answer)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeSubmitAnswer,
-		Value: ansBytes,
-	}
-	b, _ := json.Marshal(cmd)
-
-	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, f.Error())
+	err = e.clusterClient.SubmitAnswer(context.Background(), e.nodeConfig.ID, task.ID, string(e.nodeConfig.ID), ansContent)
+	if err != nil {
+		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, err)
 		return
 	}
 }

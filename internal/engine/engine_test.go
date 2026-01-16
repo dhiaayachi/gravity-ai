@@ -83,18 +83,28 @@ func (m *mockLLM) HealthCheck() error {
 type mockClusterClient struct {
 	mu           sync.Mutex
 	voted        bool
-	voteTaskID   string
-	voteAgentID  string
+	TaskID       string
+	AgentID      string
 	voteAccepted bool
+	answer       string
 }
 
 func (m *mockClusterClient) SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
-	m.voteTaskID = taskID
-	m.voteAgentID = agentID
+	m.TaskID = taskID
+	m.AgentID = agentID
 	m.voteAccepted = accepted
+	return nil
+}
+func (m *mockClusterClient) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, answer string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voted = true
+	m.TaskID = taskID
+	m.AgentID = agentID
+	m.answer = answer
 	return nil
 }
 
@@ -107,7 +117,7 @@ type testHarness struct {
 	raft       *raft.Raft
 }
 
-func newTestHarness(t *testing.T) *testHarness {
+func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	// Use t.Name() to avoid address collisions in InmemTransport
 	// Sanitize name for ID (limit length if needed, simple replacement)
 	nodeID := raft.ServerID(t.Name())
@@ -180,6 +190,7 @@ func newTestHarness(t *testing.T) *testHarness {
 		timerCh:         make(chan string, 100),
 		ProposalTimeout: 30 * time.Second,
 		VoteTimeout:     10 * time.Second,
+		clusterClient:   clusterClient,
 	}
 
 	// Register cleanup
@@ -197,10 +208,8 @@ func newTestHarness(t *testing.T) *testHarness {
 	}
 }
 
-// We need to import "os"
-
 func TestSubmitTask(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 
 	// 1. Success case
 	future, err := h.engine.SubmitTask("Task content", "user1")
@@ -232,7 +241,7 @@ func TestSubmitTask(t *testing.T) {
 }
 
 func TestFlow_TaskAdmitted_Brainstorm(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	h.cluster.isLeader = false // Follower also participates
 
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
@@ -245,20 +254,18 @@ func TestFlow_TaskAdmitted_Brainstorm(t *testing.T) {
 	// Wait for Answer
 	time.Sleep(100 * time.Millisecond)
 
-	// Check if Answer is in FSM
-	// Note: FSM stores []Answer in TaskAnswers
-	if val, ok := h.fsm.TaskAnswers.Load(task.ID); ok {
-		answers := val.([]core.Answer)
-		if len(answers) == 0 {
-			t.Error("Expected answers in FSM")
-		}
-	} else {
-		t.Error("TaskAnswers not found in FSM")
+	client, ok := h.engine.clusterClient.(*mockClusterClient)
+	if !ok {
+		t.Fatal("ClusterClient is not a mockClusterClient")
+	}
+
+	if client.TaskID != "t1" {
+		t.Errorf("Expected TaskID t1, got %s", client.TaskID)
 	}
 }
 
 func TestFlow_Leader_Proposal(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
 	h.fsm.Tasks.Store("t1", task)
 
@@ -292,7 +299,7 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 }
 
 func TestFlow_Follower_Vote(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, nil)
 	// Set as Follower
 	h.cluster.isLeader = false
 	// Configure mock client
@@ -313,8 +320,8 @@ func TestFlow_Follower_Vote(t *testing.T) {
 	if !mockClient.voted {
 		t.Error("Expected SubmitVote call on ClusterClient")
 	}
-	if mockClient.voteTaskID != "t1" {
-		t.Errorf("Expected TaskID t1, got %s", mockClient.voteTaskID)
+	if mockClient.TaskID != "t1" {
+		t.Errorf("Expected TaskID t1, got %s", mockClient.TaskID)
 	}
 	// Check mocked leader address
 	// Note: We don't check leaderAddr directly in mock unless we store it.
@@ -323,7 +330,7 @@ func TestFlow_Follower_Vote(t *testing.T) {
 }
 
 func TestFlow_Vote(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Result: "ans", Status: core.TaskStatusProposal}
 
 	h.engine.runVotePhase(task)
@@ -343,7 +350,7 @@ func TestFlow_Vote(t *testing.T) {
 }
 
 func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
 	h.fsm.Tasks.Store("t1", task) // Must match in FSM
 
@@ -371,7 +378,7 @@ func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 }
 
 func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
 	h.fsm.Tasks.Store("t1", task)
 
@@ -398,7 +405,7 @@ func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 }
 
 func TestFlow_Leader_Timeout(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	h.engine.Start()
 	h.engine.ProposalTimeout = 100 * time.Millisecond
 
@@ -426,7 +433,7 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 }
 
 func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
 	h.fsm.Tasks.Store("t1", task)
 
@@ -489,7 +496,7 @@ func TestNewEngine(t *testing.T) {
 	}
 	// NewEngine accesses node.Raft in defaultCommandSender
 
-	eng := NewEngine(node, nil, nil)
+	eng := NewEngine(node, nil, nil, nil)
 	if eng == nil {
 		t.Fatal("NewEngine returned nil")
 	}
@@ -499,7 +506,7 @@ func TestNewEngine(t *testing.T) {
 }
 
 func TestEngine_Start(t *testing.T) {
-	h := newTestHarness(t)
+	h := newTestHarness(t, &mockClusterClient{})
 	h.engine.Start() // Starts goroutine
 
 	// 1. TaskAdmitted -> Answer

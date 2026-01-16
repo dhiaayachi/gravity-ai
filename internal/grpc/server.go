@@ -92,10 +92,10 @@ func (s *Server) SubmitTask(ctx context.Context, req *pb.SubmitTaskRequest) (*pb
 	}, nil
 }
 
-func (s *Server) SubmitProposal(ctx context.Context, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
+func (s *Server) SubmitAnswer(ctx context.Context, req *pb.SubmitAnswerRequest) (*pb.SubmitAnswerResponse, error) {
 	if response, err, forward := forwardToLeader(ctx, s, req,
-		func(client pb.GravityServiceClient, ctx context.Context, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
-			return client.SubmitProposal(ctx, req)
+		func(client pb.GravityServiceClient, ctx context.Context, req *pb.SubmitAnswerRequest) (*pb.SubmitAnswerResponse, error) {
+			return client.SubmitAnswer(ctx, req)
 		}); forward {
 		return response, err
 	}
@@ -103,10 +103,10 @@ func (s *Server) SubmitProposal(ctx context.Context, req *pb.SubmitProposalReque
 	// Using Engine.SubmitAnswer as proxy for Proposal in this architecture
 	err := s.engine.SubmitAnswer(req.TaskId, req.AgentId, req.Content)
 	if err != nil {
-		return &pb.SubmitProposalResponse{Success: false, Message: err.Error()}, nil
+		return &pb.SubmitAnswerResponse{Success: false, Message: err.Error()}, nil
 	}
 
-	return &pb.SubmitProposalResponse{Success: true}, nil
+	return &pb.SubmitAnswerResponse{Success: true}, nil
 }
 
 func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb.SubmitVoteResponse, error) {

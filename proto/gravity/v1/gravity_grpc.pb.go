@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GravityService_SubmitTask_FullMethodName     = "/gravity.v1.GravityService/SubmitTask"
-	GravityService_SubmitVote_FullMethodName     = "/gravity.v1.GravityService/SubmitVote"
-	GravityService_SubmitProposal_FullMethodName = "/gravity.v1.GravityService/SubmitProposal"
+	GravityService_SubmitTask_FullMethodName   = "/gravity.v1.GravityService/SubmitTask"
+	GravityService_SubmitVote_FullMethodName   = "/gravity.v1.GravityService/SubmitVote"
+	GravityService_SubmitAnswer_FullMethodName = "/gravity.v1.GravityService/SubmitAnswer"
 )
 
 // GravityServiceClient is the client API for GravityService service.
@@ -30,7 +30,7 @@ const (
 type GravityServiceClient interface {
 	SubmitTask(ctx context.Context, in *SubmitTaskRequest, opts ...grpc.CallOption) (*SubmitTaskResponse, error)
 	SubmitVote(ctx context.Context, in *SubmitVoteRequest, opts ...grpc.CallOption) (*SubmitVoteResponse, error)
-	SubmitProposal(ctx context.Context, in *SubmitProposalRequest, opts ...grpc.CallOption) (*SubmitProposalResponse, error)
+	SubmitAnswer(ctx context.Context, in *SubmitAnswerRequest, opts ...grpc.CallOption) (*SubmitAnswerResponse, error)
 }
 
 type gravityServiceClient struct {
@@ -61,10 +61,10 @@ func (c *gravityServiceClient) SubmitVote(ctx context.Context, in *SubmitVoteReq
 	return out, nil
 }
 
-func (c *gravityServiceClient) SubmitProposal(ctx context.Context, in *SubmitProposalRequest, opts ...grpc.CallOption) (*SubmitProposalResponse, error) {
+func (c *gravityServiceClient) SubmitAnswer(ctx context.Context, in *SubmitAnswerRequest, opts ...grpc.CallOption) (*SubmitAnswerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SubmitProposalResponse)
-	err := c.cc.Invoke(ctx, GravityService_SubmitProposal_FullMethodName, in, out, cOpts...)
+	out := new(SubmitAnswerResponse)
+	err := c.cc.Invoke(ctx, GravityService_SubmitAnswer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (c *gravityServiceClient) SubmitProposal(ctx context.Context, in *SubmitPro
 type GravityServiceServer interface {
 	SubmitTask(context.Context, *SubmitTaskRequest) (*SubmitTaskResponse, error)
 	SubmitVote(context.Context, *SubmitVoteRequest) (*SubmitVoteResponse, error)
-	SubmitProposal(context.Context, *SubmitProposalRequest) (*SubmitProposalResponse, error)
+	SubmitAnswer(context.Context, *SubmitAnswerRequest) (*SubmitAnswerResponse, error)
 	mustEmbedUnimplementedGravityServiceServer()
 }
 
@@ -94,8 +94,8 @@ func (UnimplementedGravityServiceServer) SubmitTask(context.Context, *SubmitTask
 func (UnimplementedGravityServiceServer) SubmitVote(context.Context, *SubmitVoteRequest) (*SubmitVoteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitVote not implemented")
 }
-func (UnimplementedGravityServiceServer) SubmitProposal(context.Context, *SubmitProposalRequest) (*SubmitProposalResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SubmitProposal not implemented")
+func (UnimplementedGravityServiceServer) SubmitAnswer(context.Context, *SubmitAnswerRequest) (*SubmitAnswerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitAnswer not implemented")
 }
 func (UnimplementedGravityServiceServer) mustEmbedUnimplementedGravityServiceServer() {}
 func (UnimplementedGravityServiceServer) testEmbeddedByValue()                        {}
@@ -154,20 +154,20 @@ func _GravityService_SubmitVote_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GravityService_SubmitProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SubmitProposalRequest)
+func _GravityService_SubmitAnswer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitAnswerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GravityServiceServer).SubmitProposal(ctx, in)
+		return srv.(GravityServiceServer).SubmitAnswer(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GravityService_SubmitProposal_FullMethodName,
+		FullMethod: GravityService_SubmitAnswer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GravityServiceServer).SubmitProposal(ctx, req.(*SubmitProposalRequest))
+		return srv.(GravityServiceServer).SubmitAnswer(ctx, req.(*SubmitAnswerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -188,8 +188,8 @@ var GravityService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GravityService_SubmitVote_Handler,
 		},
 		{
-			MethodName: "SubmitProposal",
-			Handler:    _GravityService_SubmitProposal_Handler,
+			MethodName: "SubmitAnswer",
+			Handler:    _GravityService_SubmitAnswer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -7,7 +7,7 @@ option go_package = "github.com/dhiaayachi/gravity-ai/proto/gravity/v1;gravityv1
 service GravityService {
   rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
   rpc SubmitVote(SubmitVoteRequest) returns (SubmitVoteResponse);
-  rpc SubmitProposal(SubmitProposalRequest) returns (SubmitProposalResponse);
+  rpc SubmitAnswer(SubmitAnswerRequest) returns (SubmitAnswerResponse);
 }
 
 message SubmitTaskRequest {
@@ -30,13 +30,13 @@ message SubmitVoteResponse {
   string message = 2;
 }
 
-message SubmitProposalRequest {
+message SubmitAnswerRequest {
   string task_id = 1;
   string agent_id = 2;
   string content = 3;
 }
 
-message SubmitProposalResponse {
+message SubmitAnswerResponse {
   bool success = 1;
   string message = 2;
 }
