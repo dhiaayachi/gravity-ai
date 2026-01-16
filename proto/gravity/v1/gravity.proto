@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package gravity.v1;
+
+option go_package = "github.com/dhiaayachi/gravity-ai/proto/gravity/v1;gravityv1";
+
+service GravityService {
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+  rpc SubmitVote(SubmitVoteRequest) returns (SubmitVoteResponse);
+  rpc SubmitProposal(SubmitProposalRequest) returns (SubmitProposalResponse);
+}
+
+message SubmitTaskRequest {
+  string content = 1;
+  string requester = 2; // Optional, defaults to "api-user"
+}
+
+message SubmitTaskResponse {
+  string task_id = 1;
+}
+
+message SubmitVoteRequest {
+  string task_id = 1;
+  string agent_id = 2;
+  bool accepted = 3;
+}
+
+message SubmitVoteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SubmitProposalRequest {
+  string task_id = 1;
+  string agent_id = 2;
+  string content = 3;
+}
+
+message SubmitProposalResponse {
+  bool success = 1;
+  string message = 2;
+}

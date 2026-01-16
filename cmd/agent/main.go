@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
+	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
@@ -22,6 +23,7 @@ func main() {
 	peersFlag := flag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001,node3=127.0.0.1:8002)")
 	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
 	httpAddr := flag.String("http", ":8080", "HTTP Service address")
+	grpcPort := flag.Int("grpc-port", 50051, "gRPC Service port")
 
 	// LLM Flags
 	provider := flag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
@@ -117,6 +119,12 @@ func main() {
 		}
 	}()
 
+	// Start gRPC Server
+	grpcServer := agentGrpc.NewServer(eng, node, *grpcPort)
+	if err := grpcServer.Start(); err != nil {
+		log.Fatalf("Failed to start gRPC server: %v", err)
+	}
+
 	// Wait for leader logic (Bootstrap only)
 	if *bootstrap {
 		log.Println("Node is bootstrapping...")
@@ -128,6 +136,7 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down...")
+	grpcServer.Stop()
 	if err := node.Close(); err != nil {
 		log.Printf("Error shutting down: %v", err)
 	}

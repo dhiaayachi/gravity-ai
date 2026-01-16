@@ -167,6 +167,66 @@ func (e *Engine) SubmitTask(content string, requester string) (*TaskFuture, erro
 	}, nil
 }
 
+// SubmitAnswer handles answer submission
+func (e *Engine) SubmitAnswer(taskID, agentID, content string) error {
+	if !e.clusterState.IsLeader() {
+		return fmt.Errorf("not leader")
+	}
+
+	answer := &core.Answer{
+		TaskID:  taskID,
+		AgentID: agentID,
+		Content: content,
+	}
+
+	answerBytes, err := json.Marshal(answer)
+	if err != nil {
+		return err
+	}
+
+	cmd := raftInternal.LogCommand{
+		Type:  raftInternal.CommandTypeSubmitAnswer,
+		Value: answerBytes,
+	}
+
+	b, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+
+	return e.commandSender.Apply(b, 5*time.Second)
+}
+
+// SubmitVote handles vote submission
+func (e *Engine) SubmitVote(taskID, agentID string, accepted bool) error {
+	if !e.clusterState.IsLeader() {
+		return fmt.Errorf("not leader")
+	}
+
+	vote := &core.Vote{
+		TaskID:   taskID,
+		AgentID:  agentID,
+		Accepted: accepted,
+	}
+
+	voteBytes, err := json.Marshal(vote)
+	if err != nil {
+		return err
+	}
+
+	cmd := raftInternal.LogCommand{
+		Type:  raftInternal.CommandTypeSubmitVote,
+		Value: voteBytes,
+	}
+
+	b, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+
+	return e.commandSender.Apply(b, 5*time.Second)
+}
+
 func (e *Engine) Start() {
 	go func() {
 		for event := range e.fsm.EventCh {

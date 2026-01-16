@@ -1,0 +1,8 @@
+version: v1
+name: buf.build/dhiaayachi/gravity-ai
+lint:
+  use:
+    - DEFAULT
+breaking:
+  use:
+    - FILE
