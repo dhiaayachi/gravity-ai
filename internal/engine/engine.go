@@ -99,15 +99,7 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 	}
 }
 
-// SetClusterClient sets the cluster client
-func (e *Engine) SetClusterClient(client ClusterClient) {
-	e.clusterClient = client
-}
 
-// SetClusterState sets the cluster state (for testing/mocking)
-func (e *Engine) SetClusterState(state ClusterState) {
-	e.clusterState = state
-}
 
 func (e *Engine) Start() {
 	go func() {
@@ -141,7 +133,7 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 		task := event.Data.(*core.Task)
 		switch task.Status {
 		case core.TaskStatusDone, core.TaskStatusFailed:
-			e.NotifyTaskCompletion(task)
+			e.notifyTaskCompletion(task)
 		case core.TaskStatusProposal:
 			// All nodes vote
 			e.runVotePhase(task)
@@ -157,7 +149,7 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 	}
 }
 
-func (e *Engine) NotifyTaskCompletion(task *core.Task) {
+func (e *Engine) notifyTaskCompletion(task *core.Task) {
 	e.stopTimer(task.ID) // Cleanup timer if any
 	e.taskNotifier.NotifyTaskCompletion(task)
 }
