@@ -25,19 +25,23 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-echo "Submitting task to $NODE_URL..."
-echo "Content: $CONTENT"
+echo "Submitting task to $NODE_URL (Ollama API)..."
+echo "Prompt: $CONTENT"
 
-# URL encode content
-ENCODED_CONTENT=$(echo "$CONTENT" | jq -sRr @uri)
+# Construct JSON payload
+# escape quotes in content
+SAFE_CONTENT=$(echo "$CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"model\": \"gravity\", \"prompt\": \"$SAFE_CONTENT\"}"
 
 # Submit task
-RESPONSE=$(curl -s -X GET "$NODE_URL/submit?content=$ENCODED_CONTENT")
+RESPONSE=$(curl -s -X POST "$NODE_URL/api/generate" \
+     -H "Content-Type: application/json" \
+     -d "$PAYLOAD")
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo "Task Submitted Successfully!"
-    echo "Task ID: $RESPONSE"
+    echo "Response Received:"
+    echo "$RESPONSE" | jq
 else
     echo ""
     echo "Failed to submit task."

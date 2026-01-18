@@ -22,13 +22,21 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
     Node 1 will bootstrap the cluster. Node 2 and Node 3 will automatically join Node 1.
 
 3.  **Submit a Task**:
-    You can submit a task via the HTTP API on Node 1 (mapped to port 8081 locally):
-
+    You can submit a task via the HTTP API on Node 1 (mapped to port 8081 locally) using the helper script:
+    
     ```bash
-    curl "http://localhost:8081/submit?content=Write+a+haiku+about+space"
+    ./submit_task.sh -u http://localhost:8081 -c "Write a haiku about space"
     ```
     
-    This will return a Task ID.
+    Or directly via `curl` (Ollama compatible):
+    ```bash
+    curl -X POST http://localhost:8081/api/generate -d '{
+      "model": "gravity",
+      "prompt": "Write a haiku about space"
+    }'
+    ```
+    
+    This will return a JSON response with the result.
 
 4.  **View Logs**:
     Watch the docker logs to see the nodes brainstorming, proposing, voting, and reaching consensus.
