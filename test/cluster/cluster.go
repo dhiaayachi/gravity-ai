@@ -12,6 +12,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/hashicorp/raft"
 	"github.com/soheilhy/cmux"
 )
@@ -102,13 +103,15 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		// Mock LLM setup via factory
 		mockLLM := mockFactory(i)
+
+		mgr := tasks_manager.TasksManager{}
 		// Client no longer needs port
-		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(0))
+		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(0), &mgr)
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)
 
-		svc := agentGrpc.NewAgentService(node.Raft, eng)
+		svc := agentGrpc.NewAgentService(node.Raft, &mgr)
 
 		services = append(services, svc)
 

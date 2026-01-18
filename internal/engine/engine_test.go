@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/hashicorp/raft"
 )
 
@@ -464,7 +465,7 @@ func TestNewEngine(t *testing.T) {
 	}
 	// NewEngine accesses node.Raft in defaultCommandSender
 
-	eng := NewEngine(node, nil, nil, nil)
+	eng := NewEngine(node, nil, nil, nil, &tasks_manager.TasksManager{})
 	if eng == nil {
 		t.Fatal("NewEngine returned nil")
 	}

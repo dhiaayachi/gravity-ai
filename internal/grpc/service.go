@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
-	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/google/uuid"
 	"github.com/hashicorp/raft"
@@ -28,13 +27,17 @@ func (f *TaskFuture) Await(ctx context.Context) (*core.Task, error) {
 	}
 }
 
-func NewAgentService(raft *raft.Raft, e *engine.Engine) *AgentService {
-	return &AgentService{raft: raft, engine: e}
+func NewAgentService(raft *raft.Raft, r TaskRegistrar) *AgentService {
+	return &AgentService{raft: raft, taskRegistrar: r}
 }
 
+type TaskRegistrar interface {
+	RegisterTask(task *core.Task, ch chan *core.Task)
+	DeregisterTask(task *core.Task)
+}
 type AgentService struct {
-	engine *engine.Engine
-	raft   *raft.Raft
+	taskRegistrar TaskRegistrar
+	raft          *raft.Raft
 }
 
 // SubmitTask handles a new task submission and returns a future, called from the leader
@@ -51,11 +54,11 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 
 	// Register listener
 	ch := make(chan *core.Task, 1)
-	a.engine.AddTask(task.ID, ch)
+	a.taskRegistrar.RegisterTask(task, ch)
 
 	taskBytes, err := json.Marshal(task)
 	if err != nil {
-		a.engine.DeleteTask(task)
+		a.taskRegistrar.DeregisterTask(task)
 		return nil, err
 	}
 
@@ -66,12 +69,12 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 
 	b, err := json.Marshal(cmd)
 	if err != nil {
-		a.engine.DeleteTask(task)
+		a.taskRegistrar.DeregisterTask(task)
 		return nil, err
 	}
 
 	if f := a.raft.Apply(b, 5*time.Second); f.Error() != nil {
-		a.engine.DeleteTask(task)
+		a.taskRegistrar.DeregisterTask(task)
 		return nil, f.Error()
 	}
 

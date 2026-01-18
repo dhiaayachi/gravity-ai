@@ -15,6 +15,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
 	"github.com/soheilhy/cmux"
 )
@@ -113,7 +114,9 @@ func main() {
 	healthMonitor := health.NewMonitor(llmClient)
 	// We pass 0 as port or remove port dependency in client next
 	clusterClient := agentGrpc.NewClient(0)
-	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient)
+
+	tasksMgr := tasks_manager.TasksManager{}
+	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient, &tasksMgr)
 
 	eng.Start()
 
@@ -124,7 +127,7 @@ func main() {
 		}
 	}()
 
-	svc := agentGrpc.NewAgentService(node.Raft, eng)
+	svc := agentGrpc.NewAgentService(node.Raft, &tasksMgr)
 	// Start gRPC Server
 	// We ignore grpcPort flag and use the muxed listener
 	grpcServer := agentGrpc.NewServer(svc, node, 0) // Port is irrelevant for muxed listener but might be used for logging

@@ -15,6 +15,9 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+type TaskNotifier interface {
+	NotifyTaskCompletion(task *core.Task)
+}
 type Engine struct {
 	Node *raftInternal.AgentNode // Public for E2E tests
 
@@ -28,7 +31,7 @@ type Engine struct {
 	clusterState  ClusterState
 
 	// listeners for task completion (TaskID -> chan *core.Task)
-	listeners sync.Map
+	taskNotifier TaskNotifier
 	// ... (omitted)
 
 	// timers for leader phases (TaskID -> *time.Timer)
@@ -80,7 +83,7 @@ func (d *defaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient) *Engine {
+func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
@@ -92,6 +95,7 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		ProposalTimeout: 60 * time.Second,
 		VoteTimeout:     60 * time.Second,
 		clusterClient:   clusterClient,
+		taskNotifier:    notifier,
 	}
 }
 
@@ -155,20 +159,7 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 
 func (e *Engine) NotifyTaskCompletion(task *core.Task) {
 	e.stopTimer(task.ID) // Cleanup timer if any
-	if val, ok := e.listeners.Load(task.ID); ok {
-		ch := val.(chan *core.Task)
-		ch <- task
-		close(ch)
-		e.listeners.Delete(task.ID)
-	}
-}
-
-func (e *Engine) AddTask(task string, ch chan *core.Task) {
-	e.listeners.Store(task, ch)
-}
-
-func (e *Engine) DeleteTask(task *core.Task) {
-	e.listeners.Store(task.ID, task)
+	e.taskNotifier.NotifyTaskCompletion(task)
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
