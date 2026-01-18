@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	raftwal "github.com/hashicorp/raft-wal"
+	"go.uber.org/zap"
 )
 
 type AgentNode struct {
@@ -18,6 +19,7 @@ type AgentNode struct {
 	// Keep stores to close them
 	logStore    *raftwal.WAL
 	stableStore *raftwal.WAL
+	logger      *zap.Logger
 }
 
 type Config struct {
@@ -28,13 +30,16 @@ type Config struct {
 	Peers     map[string]string // ID -> Address
 }
 
-func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
+func NewAgentNode(cfg *Config, listener net.Listener, logger *zap.Logger) (*AgentNode, error) {
+	nodeLogger := logger.With(zap.String("component", "raft"), zap.String("agent_id", cfg.ID))
+
 	// Setup FSM
 	fsm := NewFSM(cfg.ID)
 
 	// Setup Config
 	raftConfig := raft.DefaultConfig()
 	raftConfig.LocalID = raft.ServerID(cfg.ID)
+	// Hashicorp Raft uses its own logger (hclog). We can bridge it if needed, but for now strict to AgentNode logs.
 
 	// Setup Storage
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
@@ -68,6 +73,7 @@ func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 
 	// Bootstrap if requested
 	if cfg.Bootstrap {
+		nodeLogger.Info("Bootstrapping cluster")
 		servers := []raft.Server{
 			{
 				ID:      raftConfig.LocalID,
@@ -95,10 +101,12 @@ func NewAgentNode(cfg *Config, listener net.Listener) (*AgentNode, error) {
 		Config:      cfg,
 		logStore:    logStore,
 		stableStore: logStore,
+		logger:      nodeLogger,
 	}, nil
 }
 
 func (a *AgentNode) Close() error {
+	a.logger.Info("Stopping Raft node")
 	f := a.Raft.Shutdown()
 	if err := f.Error(); err != nil {
 		return err

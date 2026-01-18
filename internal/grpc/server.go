@@ -3,12 +3,12 @@ package grpc
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	pb "github.com/dhiaayachi/gravity-ai/proto/gravity/v1"
 	hashicorpRaft "github.com/hashicorp/raft"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -19,13 +19,15 @@ type Server struct {
 	node    *raft.AgentNode
 	port    int
 	server  *grpc.Server
+	logger  *zap.Logger
 }
 
-func NewServer(svc *AgentService, node *raft.AgentNode, port int) *Server {
+func NewServer(svc *AgentService, node *raft.AgentNode, port int, logger *zap.Logger) *Server {
 	return &Server{
 		service: svc,
 		node:    node,
 		port:    port,
+		logger:  logger.With(zap.String("component", "grpc_server"), zap.Int("port", port)),
 	}
 }
 
@@ -34,10 +36,10 @@ func (s *Server) Start(l net.Listener) error {
 	s.server = grpc.NewServer(opts...)
 	pb.RegisterGravityServiceServer(s.server, s)
 
-	log.Printf("Starting gRPC server on port %d...", s.port)
+	s.logger.Info("Starting gRPC server")
 	go func() {
 		if err := s.server.Serve(l); err != nil {
-			log.Printf("gRPC server stopped: %v", err)
+			s.logger.Error("gRPC server stopped", zap.Error(err))
 		}
 	}()
 	return nil

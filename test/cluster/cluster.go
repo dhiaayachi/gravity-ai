@@ -15,6 +15,7 @@ import (
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/hashicorp/raft"
 	"github.com/soheilhy/cmux"
+	"go.uber.org/zap"
 )
 
 // Cluster represents a managed set of Raft nodes and Engines for testing
@@ -96,7 +97,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		grpcL := m.Match(cmux.HTTP2())
 		raftL := m.Match(cmux.Any())
 
-		node, err := raftInternal.NewAgentNode(cfg, raftL)
+		node, err := raftInternal.NewAgentNode(cfg, raftL, zap.NewNop())
 		if err != nil {
 			t.Fatalf("Failed to create node %s: %v", id, err)
 		}
@@ -106,7 +107,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		mgr := tasks_manager.TasksManager{}
 		// Client no longer needs port
-		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(0), &mgr)
+		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(0), &mgr, zap.NewNop())
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)
@@ -116,7 +117,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		services = append(services, svc)
 
 		// Start gRPC server
-		grpcServer := agentGrpc.NewServer(svc, node, port)
+		grpcServer := agentGrpc.NewServer(svc, node, port, zap.NewNop())
 		if err := grpcServer.Start(grpcL); err != nil {
 			t.Fatalf("Failed to start gRPC server for %s: %v", id, err)
 		}

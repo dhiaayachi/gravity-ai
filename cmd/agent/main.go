@@ -13,11 +13,13 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	gravityHttp "github.com/dhiaayachi/gravity-ai/internal/http"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
+	"github.com/dhiaayachi/gravity-ai/internal/logger"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
 	"github.com/soheilhy/cmux"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -30,6 +32,7 @@ func main() {
 	pflag.String("data_dir", "./data", "Data directory")
 	pflag.StringToString("peers", nil, "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001)")
 	pflag.Bool("bootstrap", false, "Bootstrap the cluster")
+	pflag.String("log_level", "info", "Log level (debug, info, warn, error)")
 
 	// LLM Flags
 	pflag.String("llm_provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
@@ -48,18 +51,27 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Starting Agent %s on %s...", cfg.ID, cfg.BindAddr)
+	// Initialize Logger
+	// We use a hardcoded level from flag/config manually for now or add it to Config struct
+	logLevel, _ := pflag.CommandLine.GetString("log_level")
+	appLogger, err := logger.New(logLevel)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer appLogger.Sync()
+
+	appLogger.Info("Starting Agent", zap.String("id", cfg.ID), zap.String("bind_addr", cfg.BindAddr))
 
 	if cfg.Bootstrap {
-		log.Printf("Bootstrapping cluster with %d peers", len(cfg.Peers))
+		appLogger.Info("Bootstrapping cluster", zap.Int("peer_count", len(cfg.Peers)))
 	} else {
-		log.Printf("Starting node (no bootstrap)")
+		appLogger.Info("Starting node (no bootstrap)")
 	}
 
 	// Create the main listener
 	lis, err := net.Listen("tcp", cfg.BindAddr)
 	if err != nil {
-		log.Fatalf("failed to listen on %s: %v", cfg.BindAddr, err)
+		appLogger.Fatal("Failed to listen", zap.String("addr", cfg.BindAddr), zap.Error(err))
 	}
 
 	// Create cmux
@@ -80,9 +92,9 @@ func main() {
 		Peers:     cfg.Peers,
 	}
 
-	node, err := raft.NewAgentNode(raftConfig, raftL)
+	node, err := raft.NewAgentNode(raftConfig, raftL, appLogger)
 	if err != nil {
-		log.Fatalf("Failed to create raft node: %v", err)
+		appLogger.Fatal("Failed to create raft node", zap.Error(err))
 	}
 
 	// Setup Dependencies
@@ -94,7 +106,7 @@ func main() {
 	case "gemini":
 		client, err := llm.NewGeminiClient(cfg.APIKey, cfg.Model)
 		if err != nil {
-			log.Fatalf("Failed to initialize Gemini client: %v", err)
+			appLogger.Fatal("Failed to initialize Gemini client", zap.Error(err))
 		}
 		llmClient = client
 	case "claude":
@@ -102,13 +114,13 @@ func main() {
 	case "ollama":
 		client, err := llm.NewOllamaClient(cfg.OllamaURL, cfg.Model)
 		if err != nil {
-			log.Fatalf("Failed to initialize Ollama client: %v", err)
+			appLogger.Fatal("Failed to initialize Ollama client", zap.Error(err))
 		}
 		llmClient = client
 	case "mock":
 		llmClient = &mocks.MockLLM{Healthy: true}
 	default:
-		log.Fatalf("Unknown LLM provider: %s", cfg.LLMProvider)
+		appLogger.Fatal("Unknown LLM provider", zap.String("provider", cfg.LLMProvider))
 	}
 
 	healthMonitor := health.NewMonitor(llmClient)
@@ -116,36 +128,36 @@ func main() {
 	clusterClient := agentGrpc.NewClient(0)
 
 	tasksMgr := tasks_manager.TasksManager{}
-	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient, &tasksMgr)
+	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient, &tasksMgr, appLogger)
 
 	eng.Start()
 
 	// Start cmux serving
 	go func() {
 		if err := m.Serve(); err != nil {
-			log.Fatalf("cmux failed: %v", err)
+			appLogger.Fatal("cmux failed", zap.Error(err))
 		}
 	}()
 
 	svc := agentGrpc.NewAgentService(node.Raft, &tasksMgr)
 	// Start gRPC Server
 	// We ignore grpcPort flag and use the muxed listener
-	grpcServer := agentGrpc.NewServer(svc, node, 0) // Port is irrelevant for muxed listener but might be used for logging
+	grpcServer := agentGrpc.NewServer(svc, node, 0, appLogger) // Port is irrelevant for muxed listener but might be used for logging
 	if err := grpcServer.Start(grpcL); err != nil {
-		log.Fatalf("Failed to start gRPC server: %v", err)
+		appLogger.Fatal("Failed to start gRPC server", zap.Error(err))
 	}
 
 	// Start HTTP Server for API/Admin
-	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc)
+	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, appLogger)
 	go func() {
 		if err := httpServer.Run(); err != nil {
-			log.Printf("HTTP Start failed: %v", err)
+			appLogger.Error("HTTP Start failed", zap.Error(err))
 		}
 	}()
 
 	// Wait for leader logic (Bootstrap only)
 	if cfg.Bootstrap {
-		log.Println("Node is bootstrapping...")
+		appLogger.Info("Node is bootstrapping...")
 	}
 
 	// Handle signals
@@ -153,12 +165,12 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
 
-	log.Println("Shutting down...")
+	appLogger.Info("Shutting down...")
 	grpcServer.Stop()
 	if err := httpServer.Shutdown(context.Background()); err != nil {
-		log.Printf("HTTP server shutdown error: %v", err)
+		appLogger.Error("HTTP server shutdown error", zap.Error(err))
 	}
 	if err := node.Close(); err != nil {
-		log.Printf("Error shutting down: %v", err)
+		appLogger.Error("Error shutting down", zap.Error(err))
 	}
 }

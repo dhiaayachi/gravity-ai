@@ -13,6 +13,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/hashicorp/raft"
+	"go.uber.org/zap"
 )
 
 type TaskNotifier interface {
@@ -32,9 +33,7 @@ type Engine struct {
 
 	// listeners for task completion (TaskID -> chan *core.Task)
 	taskNotifier TaskNotifier
-	// ... (omitted)
 
-	// timers for leader phases (TaskID -> *time.Timer)
 	// timers for leader phases (TaskID -> *time.Timer)
 	timers sync.Map
 
@@ -43,6 +42,8 @@ type Engine struct {
 
 	ProposalTimeout time.Duration
 	VoteTimeout     time.Duration
+
+	logger *zap.Logger
 }
 
 // ClusterClient defines the interface for communicating with other agents
@@ -83,7 +84,7 @@ func (d *defaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier) *Engine {
+func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
@@ -96,12 +97,12 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 		VoteTimeout:     60 * time.Second,
 		clusterClient:   clusterClient,
 		taskNotifier:    notifier,
+		logger:          logger.With(zap.String("component", "engine")),
 	}
 }
 
-
-
 func (e *Engine) Start() {
+	e.logger.Info("Starting Engine")
 	go func() {
 		for {
 			select {
@@ -115,6 +116,7 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) handleRaftEvent(event raftInternal.Event) {
+	e.logger.Debug("Handling Raft Event", zap.String("type", string(event.Type)))
 	switch event.Type {
 	case raftInternal.EventTaskAdmitted:
 		task := event.Data.(*core.Task)
@@ -155,7 +157,7 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
-	log.Printf("[%s] Received task admission: %s. Starting local brainstorm.", e.nodeConfig.ID, task.ID)
+	e.logger.Info("Received task admission. Starting local brainstorm.", zap.String("task_id", task.ID))
 
 	// Start Proposal Timer (waiting for answers)
 	if e.clusterState.IsLeader() {
@@ -167,25 +169,25 @@ func (e *Engine) handleTaskAdmitted(task *core.Task) {
 }
 
 func (e *Engine) runBrainstormPhase(task *core.Task) {
-	log.Printf("[%s] Contributing to Brainstorm for task %s", e.nodeConfig.ID, task.ID)
+	e.logger.Debug("Contributing to Brainstorm", zap.String("task_id", task.ID))
 
 	// Simulate "Broadcasting" logic by just getting a local answer for now
 	ansContent, err := e.llm.Generate(task.Content)
 	if err != nil {
-		log.Printf("[%s] LLM generation failed: %v", e.nodeConfig.ID, err)
+		e.logger.Error("LLM generation failed", zap.Error(err), zap.String("task_id", task.ID))
 		return
 	}
 
 	// Get leader address
 	leaderAddr := e.clusterState.GetLeaderAddr()
 	if leaderAddr == "" {
-		log.Printf("[%s] Cannot submit answer: No leader known", e.nodeConfig.ID)
+		e.logger.Warn("Cannot submit answer: No leader known")
 		return
 	}
 
 	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, string(e.nodeConfig.ID), ansContent)
 	if err != nil {
-		log.Printf("[%s] Failed to apply answer: %v", e.nodeConfig.ID, err)
+		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
 		return
 	}
 }
@@ -206,7 +208,7 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	// 1. Check Participation
 	serverCount, err := e.clusterState.GetServerCount()
 	if err != nil {
-		log.Printf("[%s] Failed to get server count: %v", e.nodeConfig.ID, err)
+		e.logger.Error("Failed to get server count", zap.Error(err), zap.String("task_id", task.ID))
 		return
 	}
 	if serverCount == 0 {
@@ -224,10 +226,10 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 		return
 	}
 
-	log.Printf("[%s] Starting Proposal phase for task %s", e.nodeConfig.ID, task.ID)
+	e.logger.Info("Starting Proposal phase", zap.String("task_id", task.ID))
 
 	// 2. Aggregate Answers using LLM
-	log.Printf("[%s] Aggregating %d answers for task %s", e.nodeConfig.ID, len(answers), task.ID)
+	e.logger.Debug("Aggregating answers", zap.Int("count", len(answers)), zap.String("task_id", task.ID))
 
 	// Stop Proposal Timer as we are moving to next phase
 	e.stopTimer(task.ID)
@@ -241,7 +243,7 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 
 	proposalContent, err := e.llm.Aggregate(task.Content, answerContents)
 	if err != nil {
-		log.Printf("[%s] LLM aggregation failed: %v", e.nodeConfig.ID, err)
+		e.logger.Error("LLM aggregation failed", zap.Error(err), zap.String("task_id", task.ID))
 		return
 	}
 
@@ -257,7 +259,7 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	b, _ := json.Marshal(cmd)
 
 	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		log.Printf("[%s] Failed to update task to proposal: %v", e.nodeConfig.ID, f.Error())
+		e.logger.Error("Failed to update task to proposal", zap.Error(f.Error()), zap.String("task_id", task.ID))
 		return
 	}
 }
@@ -345,7 +347,7 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	// Calculate Quorum
 	serverCount, err := e.clusterState.GetServerCount()
 	if err != nil {
-		log.Printf("[%s] Failed to get raft configuration: %v", e.nodeConfig.ID, err)
+		e.logger.Error("Failed to get raft configuration", zap.Error(err))
 		return
 	}
 	if serverCount == 0 {
@@ -368,13 +370,11 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	var finalStatus core.TaskStatus
 
 	if accepted >= quorum {
-		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). Accepted.", e.nodeConfig.ID, task.ID, accepted, serverCount)
-		log.Printf("[%s] Final accepted response: %s", e.nodeConfig.ID, task.Result)
+		e.logger.Info("Consensus reached: Accepted", zap.String("task_id", task.ID), zap.String("result", task.Result))
 		finalStatus = core.TaskStatusDone
 		// TODO: Increment leader reputation
 	} else if rejected >= quorum {
-		log.Printf("[%s] Consensus reached for task %s (Votes: %d/%d). REJECTED.", e.nodeConfig.ID, task.ID, rejected, serverCount)
-		log.Printf("[%s] Final rejected response: %s", e.nodeConfig.ID, task.Result)
+		e.logger.Info("Consensus reached: REJECTED", zap.String("task_id", task.ID), zap.String("result", task.Result))
 		finalStatus = core.TaskStatusFailed
 		// TODO: Decrement leader reputation & trigger election
 	} else {
@@ -394,7 +394,7 @@ func (e *Engine) finalizeTask(task *core.Task) {
 	b, _ := json.Marshal(cmd)
 	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
 		// Just log error
-		log.Printf("[%s] Failed to apply update task: %v", e.nodeConfig.ID, f.Error())
+		e.logger.Error("Failed to apply update task", zap.Error(f.Error()))
 	}
 
 	// Notify listeners is done via EventTaskUpdated in the event loop
@@ -412,7 +412,7 @@ func (e *Engine) startTimer(taskID string, duration time.Duration) {
 }
 
 func (e *Engine) handleTaskTimeout(taskID string) {
-	log.Printf("[%s] Timeout triggered for task %s", e.nodeConfig.ID, taskID)
+	e.logger.Warn("Timeout triggered", zap.String("task_id", taskID))
 	e.timers.Delete(taskID)
 
 	// Check task status
@@ -434,7 +434,7 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 
 			serverCount, err := e.clusterState.GetServerCount()
 			if err != nil {
-				log.Printf("[%s] Failed to get server count: %v", e.nodeConfig.ID, err)
+				e.logger.Error("Failed to get server count", zap.Error(err), zap.String("task_id", task.ID))
 				return
 			}
 			quorum := serverCount/2 + 1
@@ -451,7 +451,7 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 	// Fallthrough for failure (Voting timeout or Brainstorming timeout with < Quorum)
 	// Default failure behavior for other states (e.g. Voting)
 	failMsg := "Phase timeout exceeded"
-	log.Printf("[Timeout] Task %s reached timeout: %s", taskID, failMsg)
+	e.logger.Error("Task reached timeout, failing", zap.String("task_id", taskID), zap.String("reason", failMsg))
 
 	// Create failed task update
 	failedTask := &core.Task{
@@ -468,7 +468,7 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 	b, _ := json.Marshal(cmd)
 
 	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		log.Printf("Failed to apply timeout failure for task %s: %v", taskID, f.Error())
+		e.logger.Error("Failed to apply timeout failure", zap.Error(f.Error()), zap.String("task_id", taskID))
 	}
 }
 

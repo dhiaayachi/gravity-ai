@@ -3,11 +3,11 @@ package http
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type Server struct {
@@ -15,9 +15,10 @@ type Server struct {
 	agentService *grpc.AgentService
 	httpServer   *http.Server
 	addr         string
+	logger       *zap.Logger
 }
 
-func NewServer(addr string, agentService *grpc.AgentService) *Server {
+func NewServer(addr string, agentService *grpc.AgentService, logger *zap.Logger) *Server {
 	// standard gin with logger and recovery
 	router := gin.Default()
 
@@ -25,6 +26,7 @@ func NewServer(addr string, agentService *grpc.AgentService) *Server {
 		router:       router,
 		agentService: agentService,
 		addr:         addr,
+		logger:       logger.With(zap.String("component", "http_server")),
 	}
 
 	s.registerRoutes()
@@ -47,7 +49,7 @@ func (s *Server) Run() error {
 		Handler: s.router,
 	}
 
-	log.Printf("Starting HTTP API (Ollama Compatible) on %s", s.addr)
+	s.logger.Info("Starting HTTP API (Ollama Compatible)", zap.String("addr", s.addr))
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("failed to start http server: %w", err)
 	}

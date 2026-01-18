@@ -11,6 +11,7 @@ import (
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/hashicorp/raft"
+	"go.uber.org/zap"
 )
 
 // mockClusterState no longer needed for ISLeader if we use real Raft?
@@ -197,6 +198,7 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 		VoteTimeout:     10 * time.Second,
 		clusterClient:   clusterClient,
 		taskNotifier:    &mockTaskNotifier{},
+		logger:          zap.NewNop(),
 	}
 
 	// Register cleanup
@@ -475,7 +477,7 @@ func TestNewEngine(t *testing.T) {
 	}
 	// NewEngine accesses node.Raft in defaultCommandSender
 
-	eng := NewEngine(node, nil, nil, nil, &tasks_manager.TasksManager{})
+	eng := NewEngine(node, nil, nil, nil, &tasks_manager.TasksManager{}, zap.NewNop())
 	if eng == nil {
 		t.Fatal("NewEngine returned nil")
 	}
