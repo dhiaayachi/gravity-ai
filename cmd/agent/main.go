@@ -1,15 +1,13 @@
 package main
 
 import (
-	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 
-	"net"
-
+	"github.com/dhiaayachi/gravity-ai/config"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
@@ -18,48 +16,49 @@ import (
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
 	"github.com/soheilhy/cmux"
+	"github.com/spf13/pflag"
 )
 
 func main() {
-	id := flag.String("id", "agent-1", "Agent ID")
-	addr := flag.String("addr", "127.0.0.1:8000", "Bind address")
-	dataDir := flag.String("data-dir", "./data", "Data directory")
-	peersFlag := flag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001,node3=127.0.0.1:8002)")
-	bootstrap := flag.Bool("bootstrap", false, "Bootstrap the cluster")
-	httpAddr := flag.String("http", ":8080", "HTTP Service address")
+	// Define Flags
+	// We use pflag for better compatibility with Viper (and standard flags)
+	// These flags will override config file and env vars
+	pflag.String("id", "agent-1", "Agent ID")
+	pflag.String("addr", "127.0.0.1:8000", "Bind address")
+	pflag.String("http_addr", ":8080", "HTTP Service address")
+	pflag.String("data_dir", "./data", "Data directory")
+	pflag.StringToString("peers", nil, "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001)")
+	pflag.Bool("bootstrap", false, "Bootstrap the cluster")
 
 	// LLM Flags
-	provider := flag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
-	apiKey := flag.String("api-key", "", "API Key for cloud providers")
-	model := flag.String("model", "", "Model name (optional)")
-	ollamaHost := flag.String("ollama-url", "http://localhost:11434", "Ollama URL")
+	pflag.String("llm_provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
+	pflag.String("api_key", "", "API Key for cloud providers")
+	pflag.String("model", "", "Model name (optional)")
+	pflag.String("ollama_url", "http://localhost:11434", "Ollama URL")
 
-	flag.Parse()
+	// Config File Flag (not bound to config struct, just for loading)
+	cfgFile := pflag.String("config", "", "config file (default is ./gravity.yaml)")
 
-	log.Printf("Starting Agent %s on %s...", *id, *addr)
+	pflag.Parse()
 
-	// Parse Peers
-	peers := make(map[string]string)
-	if *peersFlag != "" {
-		importStrings := strings.Split(*peersFlag, ",")
-		for _, s := range importStrings {
-			parts := strings.Split(s, "=")
-			if len(parts) == 2 {
-				peers[parts[0]] = parts[1]
-			}
-		}
+	// Load Configuration
+	cfg, err := config.LoadConfig(*cfgFile, pflag.CommandLine)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	if *bootstrap {
-		log.Printf("Bootstrapping cluster with %d peers", len(peers))
+	log.Printf("Starting Agent %s on %s...", cfg.ID, cfg.BindAddr)
+
+	if cfg.Bootstrap {
+		log.Printf("Bootstrapping cluster with %d peers", len(cfg.Peers))
 	} else {
 		log.Printf("Starting node (no bootstrap)")
 	}
 
 	// Create the main listener
-	lis, err := net.Listen("tcp", *addr)
+	lis, err := net.Listen("tcp", cfg.BindAddr)
 	if err != nil {
-		log.Fatalf("failed to listen on %s: %v", *addr, err)
+		log.Fatalf("failed to listen on %s: %v", cfg.BindAddr, err)
 	}
 
 	// Create cmux
@@ -73,11 +72,11 @@ func main() {
 
 	// Setup Raft Node
 	raftConfig := &raft.Config{
-		ID:        *id,
-		DataDir:   *dataDir,
-		BindAddr:  *addr,
-		Bootstrap: *bootstrap,
-		Peers:     peers,
+		ID:        cfg.ID,
+		DataDir:   cfg.DataDir,
+		BindAddr:  cfg.BindAddr,
+		Bootstrap: cfg.Bootstrap,
+		Peers:     cfg.Peers,
 	}
 
 	node, err := raft.NewAgentNode(raftConfig, raftL)
@@ -88,19 +87,19 @@ func main() {
 	// Setup Dependencies
 	var llmClient llm.Client
 
-	switch *provider {
+	switch cfg.LLMProvider {
 	case "openai":
-		llmClient = llm.NewOpenAIClient(*apiKey, *model)
+		llmClient = llm.NewOpenAIClient(cfg.APIKey, cfg.Model)
 	case "gemini":
-		client, err := llm.NewGeminiClient(*apiKey, *model)
+		client, err := llm.NewGeminiClient(cfg.APIKey, cfg.Model)
 		if err != nil {
 			log.Fatalf("Failed to initialize Gemini client: %v", err)
 		}
 		llmClient = client
 	case "claude":
-		llmClient = llm.NewClaudeClient(*apiKey, *model)
+		llmClient = llm.NewClaudeClient(cfg.APIKey, cfg.Model)
 	case "ollama":
-		client, err := llm.NewOllamaClient(*ollamaHost, *model)
+		client, err := llm.NewOllamaClient(cfg.OllamaURL, cfg.Model)
 		if err != nil {
 			log.Fatalf("Failed to initialize Ollama client: %v", err)
 		}
@@ -108,7 +107,7 @@ func main() {
 	case "mock":
 		llmClient = &mocks.MockLLM{Healthy: true}
 	default:
-		log.Fatalf("Unknown LLM provider: %s", *provider)
+		log.Fatalf("Unknown LLM provider: %s", cfg.LLMProvider)
 	}
 
 	healthMonitor := health.NewMonitor(llmClient)
@@ -151,14 +150,15 @@ func main() {
 			w.Write([]byte(f.TaskID))
 		})
 
-		log.Printf("Starting HTTP API on %s", *httpAddr)
-		if err := http.ListenAndServe(*httpAddr, nil); err != nil {
-			log.Fatalf("HTTP Start failed: %v", err)
+		log.Printf("Starting HTTP API on %s", cfg.HTTPAddr)
+		if err := http.ListenAndServe(cfg.HTTPAddr, nil); err != nil {
+			// Don't fatal, just log error, as this is secondary
+			log.Printf("HTTP Start failed: %v", err)
 		}
 	}()
 
 	// Wait for leader logic (Bootstrap only)
-	if *bootstrap {
+	if cfg.Bootstrap {
 		log.Println("Node is bootstrapping...")
 	}
 

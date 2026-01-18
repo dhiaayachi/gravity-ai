@@ -118,6 +118,10 @@ type testHarness struct {
 	raft       *raft.Raft
 }
 
+type mockTaskNotifier struct{}
+
+func (m *mockTaskNotifier) NotifyTaskCompletion(task *core.Task) {}
+
 func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	// Use t.Name() to avoid address collisions in InmemTransport
 	// Sanitize name for ID (limit length if needed, simple replacement)
@@ -192,6 +196,7 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 		ProposalTimeout: 30 * time.Second,
 		VoteTimeout:     10 * time.Second,
 		clusterClient:   clusterClient,
+		taskNotifier:    &mockTaskNotifier{},
 	}
 
 	// Register cleanup
