@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 
@@ -11,6 +11,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
+	gravityHttp "github.com/dhiaayachi/gravity-ai/internal/http"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
@@ -135,24 +136,9 @@ func main() {
 	}
 
 	// Start HTTP Server for API/Admin
+	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc)
 	go func() {
-		http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
-			taskContent := r.URL.Query().Get("content")
-			if taskContent == "" {
-				http.Error(w, "missing content", http.StatusBadRequest)
-				return
-			}
-			f, err := svc.SubmitTask(taskContent, "api-user")
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			w.Write([]byte(f.TaskID))
-		})
-
-		log.Printf("Starting HTTP API on %s", cfg.HTTPAddr)
-		if err := http.ListenAndServe(cfg.HTTPAddr, nil); err != nil {
-			// Don't fatal, just log error, as this is secondary
+		if err := httpServer.Run(); err != nil {
 			log.Printf("HTTP Start failed: %v", err)
 		}
 	}()
@@ -169,6 +155,9 @@ func main() {
 
 	log.Println("Shutting down...")
 	grpcServer.Stop()
+	if err := httpServer.Shutdown(context.Background()); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 	if err := node.Close(); err != nil {
 		log.Printf("Error shutting down: %v", err)
 	}
