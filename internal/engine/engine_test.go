@@ -267,6 +267,11 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	}
 }
 
+// SetClusterClient sets the cluster client
+func (e *Engine) SetClusterClient(client ClusterClient) {
+	e.clusterClient = client
+}
+
 func TestFlow_Follower_Vote(t *testing.T) {
 	h := newTestHarness(t, nil)
 	// Set as Follower
