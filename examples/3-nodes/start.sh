@@ -21,12 +21,12 @@ echo "Starting Agent $AGENT_ID..."
 
 # Start in foreground (or background but wait for it)
 ./gravity-agent \
-  -id="$AGENT_ID" \
-  -addr="$BIND_ADDR" \
-  -http="$HTTP_ADDR" \
-  -data-dir="$DATA_DIR" \
-  -bootstrap="$BOOTSTRAP" \
-  -peers="$PEERS" \
-  -llm-provider="$LLM_PROVIDER" \
-  -api-key="$API_KEY" \
-  -model="$LLM_MODEL"
+  --id="$AGENT_ID" \
+  --addr="$BIND_ADDR" \
+  --http_addr="$HTTP_ADDR" \
+  --data_dir="$DATA_DIR" \
+  --bootstrap="$BOOTSTRAP" \
+  --peers="$PEERS" \
+  --llm_provider="$LLM_PROVIDER" \
+  --api_key="$API_KEY" \
+  --model="$LLM_MODEL"
