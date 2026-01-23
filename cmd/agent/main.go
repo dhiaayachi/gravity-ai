@@ -37,7 +37,7 @@ func main() {
 
 	// LLM Flags
 	pflag.String("llm_provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
-	pflag.String("api_key", "", "API Key for cloud providers")
+	pflag.String("api_key", "", "API Key for llm providers")
 	pflag.String("model", "", "Model name (optional)")
 	pflag.String("ollama_url", "http://localhost:11434", "Ollama URL")
 

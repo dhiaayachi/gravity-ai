@@ -13,7 +13,6 @@ services:
       - HTTP_ADDR=:8080
       - DATA_DIR=/data
       - BOOTSTRAP=true
-      - BOOTSTRAP_EXPECT=3
       - PEERS=node2=node2:8000,node3=node3:8000
       - CLEAN=true
       - LLM_PROVIDER=gemini
