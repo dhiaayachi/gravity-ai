@@ -3,30 +3,8 @@ package raft
 import (
 	"log"
 
-	"net"
-	"time"
-
 	"github.com/hashicorp/raft"
 )
-
-// StreamLayer implements raft.StreamLayer interface for cmux
-type StreamLayer struct {
-	net.Listener
-}
-
-func NewStreamLayer(l net.Listener) *StreamLayer {
-	return &StreamLayer{Listener: l}
-}
-
-// Dial implements the StreamLayer interface.
-func (t *StreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
-	return net.DialTimeout("tcp", string(address), timeout)
-}
-
-// Addr implements the net.Listener interface
-func (t *StreamLayer) Addr() net.Addr {
-	return t.Listener.Addr()
-}
 
 // ReputationTransport wraps a raft.Transport to enforce reputation-based voting
 type ReputationTransport struct {

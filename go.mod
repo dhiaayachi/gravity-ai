@@ -3,6 +3,7 @@ module github.com/dhiaayachi/gravity-ai
 go 1.25.5
 
 require (
+	github.com/dhiaayachi/raft-grpc-transport v0.1.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/generative-ai-go v0.20.1
 	github.com/google/uuid v1.6.0
@@ -11,7 +12,6 @@ require (
 	github.com/liushuangls/go-anthropic/v2 v2.17.0
 	github.com/ollama/ollama v0.14.2
 	github.com/sashabaranov/go-openai v1.41.2
-	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1

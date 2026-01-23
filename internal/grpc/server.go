@@ -22,20 +22,19 @@ type Server struct {
 	logger  *zap.Logger
 }
 
-func NewServer(svc *AgentService, node *raft.AgentNode, port int, logger *zap.Logger) *Server {
-	return &Server{
+func NewServer(svc *AgentService, node *raft.AgentNode, port int, server *grpc.Server, logger *zap.Logger) *Server {
+	s := &Server{
 		service: svc,
 		node:    node,
 		port:    port,
+		server:  server,
 		logger:  logger.With(zap.String("component", "grpc_server"), zap.Int("port", port)),
 	}
+	pb.RegisterGravityServiceServer(server, s)
+	return s
 }
 
 func (s *Server) Start(l net.Listener) error {
-	opts := []grpc.ServerOption{}
-	s.server = grpc.NewServer(opts...)
-	pb.RegisterGravityServiceServer(s.server, s)
-
 	s.logger.Info("Starting gRPC server")
 	go func() {
 		if err := s.server.Serve(l); err != nil {
@@ -49,6 +48,10 @@ func (s *Server) Stop() {
 	if s.server != nil {
 		s.server.GracefulStop()
 	}
+}
+
+func (s *Server) GetGrpcServer() *grpc.Server {
+	return s.server
 }
 
 func (s *Server) getLeaderConn(ctx context.Context) (*grpc.ClientConn, error) {

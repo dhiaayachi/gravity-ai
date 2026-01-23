@@ -2,9 +2,7 @@ package raft
 
 import (
 	"fmt"
-	"net"
 	"os"
-	"time"
 
 	"github.com/hashicorp/raft"
 	raftwal "github.com/hashicorp/raft-wal"
@@ -30,7 +28,7 @@ type Config struct {
 	Peers     map[string]string // ID -> Address
 }
 
-func NewAgentNode(cfg *Config, listener net.Listener, logger *zap.Logger) (*AgentNode, error) {
+func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*AgentNode, error) {
 	nodeLogger := logger.With(zap.String("component", "raft"), zap.String("agent_id", cfg.ID))
 
 	// Setup FSM
@@ -56,17 +54,11 @@ func NewAgentNode(cfg *Config, listener net.Listener, logger *zap.Logger) (*Agen
 		return nil, fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// Setup Transport using StreamLayer and existing listener
-	streamLayer := NewStreamLayer(listener)
-
-	// We use NewNetworkTransport with the stream layer
-	// MaxPool: 3, Timeout: 10s, LogOutput: os.Stderr
-	realTransport := raft.NewNetworkTransport(streamLayer, 3, 10*time.Second, os.Stderr)
-
-	transport := NewReputationTransport(realTransport, fsm, cfg.ID)
+	// Wrap transport with ReputationTransport
+	repTransport := NewReputationTransport(transport, fsm, cfg.ID)
 
 	// Create Raft
-	r, err := raft.NewRaft(raftConfig, fsm, logStore, logStore, snapStore, transport)
+	r, err := raft.NewRaft(raftConfig, fsm, logStore, logStore, snapStore, repTransport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
@@ -77,7 +69,7 @@ func NewAgentNode(cfg *Config, listener net.Listener, logger *zap.Logger) (*Agen
 		servers := []raft.Server{
 			{
 				ID:      raftConfig.LocalID,
-				Address: realTransport.LocalAddr(),
+				Address: transport.LocalAddr(),
 			},
 		}
 
@@ -97,7 +89,7 @@ func NewAgentNode(cfg *Config, listener net.Listener, logger *zap.Logger) (*Agen
 	return &AgentNode{
 		Raft:        r,
 		FSM:         fsm,
-		Transport:   transport,
+		Transport:   repTransport,
 		Config:      cfg,
 		logStore:    logStore,
 		stableStore: logStore,

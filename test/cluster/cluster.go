@@ -13,9 +13,10 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
+	raftgrpc "github.com/dhiaayachi/raft-grpc-transport"
 	"github.com/hashicorp/raft"
-	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 // Cluster represents a managed set of Raft nodes and Engines for testing
@@ -92,12 +93,16 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		}
 		listeners = append(listeners, lis)
 
-		// Create cmux
-		m := cmux.New(lis)
-		grpcL := m.Match(cmux.HTTP2())
-		raftL := m.Match(cmux.Any())
+		// Create gRPC Server
+		gs := grpc.NewServer()
 
-		node, err := raftInternal.NewAgentNode(cfg, raftL, zap.NewNop())
+		// Setup Raft Transport
+		tm, err := raftgrpc.NewGrpcTransport(addr, gs)
+		if err != nil {
+			t.Fatalf("Failed to create raft transport: %v", err)
+		}
+
+		node, err := raftInternal.NewAgentNode(cfg, tm, zap.NewNop())
 		if err != nil {
 			t.Fatalf("Failed to create node %s: %v", id, err)
 		}
@@ -117,18 +122,10 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 		services = append(services, svc)
 
 		// Start gRPC server
-		grpcServer := agentGrpc.NewServer(svc, node, port, zap.NewNop())
-		if err := grpcServer.Start(grpcL); err != nil {
+		grpcServer := agentGrpc.NewServer(svc, node, port, gs, zap.NewNop())
+		if err := grpcServer.Start(lis); err != nil {
 			t.Fatalf("Failed to start gRPC server for %s: %v", id, err)
 		}
-
-		// Start cmux
-		go func() {
-			if err := m.Serve(); err != nil {
-				// Log error but check if closed
-				// fmt.Printf("cmux error: %v\n", err)
-			}
-		}()
 	}
 
 	// Inject Proxy CommandSender

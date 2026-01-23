@@ -17,9 +17,10 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
-	"github.com/soheilhy/cmux"
+	raftgrpc "github.com/dhiaayachi/raft-grpc-transport"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -74,14 +75,15 @@ func main() {
 		appLogger.Fatal("Failed to listen", zap.String("addr", cfg.BindAddr), zap.Error(err))
 	}
 
-	// Create cmux
-	m := cmux.New(lis)
+	// Create gRPC Server
+	// We use insecure here, but in production we should use TLS
+	gs := grpc.NewServer()
 
-	// Match connections
-	// gRPC (look for HTTP2 with gRPC content type)
-	grpcL := m.Match(cmux.HTTP2())
-	// Raft (Any other traffic - Fallback)
-	raftL := m.Match(cmux.Any())
+	// Setup Raft Transport (gRPC)
+	tm, err := raftgrpc.NewGrpcTransport(cfg.BindAddr, gs)
+	if err != nil {
+		appLogger.Fatal("Failed to create raft transport", zap.Error(err))
+	}
 
 	// Setup Raft Node
 	raftConfig := &raft.Config{
@@ -92,7 +94,7 @@ func main() {
 		Peers:     cfg.Peers,
 	}
 
-	node, err := raft.NewAgentNode(raftConfig, raftL, appLogger)
+	node, err := raft.NewAgentNode(raftConfig, tm, appLogger)
 	if err != nil {
 		appLogger.Fatal("Failed to create raft node", zap.Error(err))
 	}
@@ -132,18 +134,12 @@ func main() {
 
 	eng.Start()
 
-	// Start cmux serving
-	go func() {
-		if err := m.Serve(); err != nil {
-			appLogger.Fatal("cmux failed", zap.Error(err))
-		}
-	}()
-
 	svc := agentGrpc.NewAgentService(node.Raft, &tasksMgr)
 	// Start gRPC Server
 	// We ignore grpcPort flag and use the muxed listener
-	grpcServer := agentGrpc.NewServer(svc, node, 0, appLogger) // Port is irrelevant for muxed listener but might be used for logging
-	if err := grpcServer.Start(grpcL); err != nil {
+	grpcServer := agentGrpc.NewServer(svc, node, 0, gs, appLogger) // Port is irrelevant for muxed listener but might be used for logging
+
+	if err := grpcServer.Start(lis); err != nil {
 		appLogger.Fatal("Failed to start gRPC server", zap.Error(err))
 	}
 
