@@ -33,7 +33,7 @@ func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*A
 	nodeLogger := logger.With(zap.String("component", "raft"), zap.String("agent_id", cfg.ID))
 
 	// Setup SyncMapFSM
-	fsm := fsm.NewSyncMapFSM(cfg.ID)
+	mFsm := fsm.NewSyncMapFSM(cfg.ID)
 
 	// Setup Config
 	raftConfig := raft.DefaultConfig()
@@ -56,10 +56,10 @@ func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*A
 	}
 
 	// Wrap transport with ReputationTransport
-	repTransport := NewReputationTransport(transport, fsm, cfg.ID)
+	repTransport := NewReputationTransport(transport, mFsm, cfg.ID)
 
 	// Create Raft
-	r, err := raft.NewRaft(raftConfig, fsm, logStore, logStore, snapStore, repTransport)
+	r, err := raft.NewRaft(raftConfig, mFsm, logStore, logStore, snapStore, repTransport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
@@ -89,7 +89,7 @@ func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*A
 
 	return &AgentNode{
 		Raft:        r,
-		FSM:         fsm,
+		FSM:         mFsm,
 		Transport:   repTransport,
 		Config:      cfg,
 		logStore:    logStore,

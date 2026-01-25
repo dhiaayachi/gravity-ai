@@ -36,7 +36,7 @@ func (m *MockLLM) HealthCheck() error {
 	return nil
 }
 
-func (m *MockLLM) Aggregate(taskContent string, answers []string) (string, error) {
+func (m *MockLLM) Aggregate(_ string, _ []string) (string, error) {
 	if !m.Healthy {
 		return "", errors.New("llm unhealthy")
 	}

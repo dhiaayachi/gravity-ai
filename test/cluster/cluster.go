@@ -10,7 +10,6 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
-	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	raftgrpc "github.com/dhiaayachi/raft-grpc-transport"
@@ -112,7 +111,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		mgr := tasks_manager.TasksManager{}
 		// Client no longer needs port
-		eng := engine.NewEngine(node, health.NewMonitor(mockLLM), mockLLM, agentGrpc.NewClient(), &mgr, zap.NewNop())
+		eng := engine.NewEngine(node, mockLLM, agentGrpc.NewClient(), &mgr, zap.NewNop())
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)
@@ -154,13 +153,13 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 // Close cleans up all resources (nodes and directories)
 func (c *Cluster) Close() {
 	for _, n := range c.Nodes {
-		n.Close()
+		_ = n.Close()
 	}
 	for _, d := range c.Dirs {
-		os.RemoveAll(d)
+		_ = os.RemoveAll(d)
 	}
 	for _, l := range c.Listeners {
-		l.Close()
+		_ = l.Close()
 	}
 }
 

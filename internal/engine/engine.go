@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
-	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
@@ -70,7 +69,8 @@ func (d *defaultClusterState) IsLeader() bool {
 }
 
 func (d *defaultClusterState) GetLeaderAddr() string {
-	return string(d.Node.Raft.Leader())
+	addr, _ := d.Node.Raft.LeaderWithID()
+	return string(addr)
 }
 
 func (d *defaultClusterState) GetFormattedID() string {
@@ -85,7 +85,7 @@ func (d *defaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger) *Engine {
+func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
@@ -251,7 +251,7 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 
 	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("leader_addr", leaderAddr), zap.String("answer", ansContent))
 	// Submit answer to leader
-	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, string(e.nodeConfig.ID), ansContent)
+	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, e.nodeConfig.ID, ansContent)
 	if err != nil {
 		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
 		return
@@ -346,7 +346,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	if e.clusterState.IsLeader() {
 		vote := core.Vote{
 			TaskID:   task.ID,
-			AgentID:  string(e.nodeConfig.ID),
+			AgentID:  e.nodeConfig.ID,
 			Accepted: isValid,
 		}
 

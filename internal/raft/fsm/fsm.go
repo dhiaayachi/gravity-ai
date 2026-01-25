@@ -32,12 +32,12 @@ type LogCommand struct {
 	Value   json.RawMessage `json:"value,omitempty"`
 }
 
-type FSMSnapshot struct {
+type Snapshot struct {
 	Reputations map[string]int
 	Tasks       map[string]*core.Task
 }
 
-func (s *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
+func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
 	err := func() error {
 		b, err := json.Marshal(s) // Use the struct itself
 		if err != nil {
@@ -49,15 +49,15 @@ func (s *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
 		return nil
 	}()
 	if err != nil {
-		sink.Cancel()
+		_ = sink.Cancel()
 		return err
 	}
 	return sink.Close()
 }
 
-func (s *FSMSnapshot) Release() {}
+func (s *Snapshot) Release() {}
 
-type FSMSnapshotData struct {
+type SnapshotData struct {
 	Reputations map[string]int        `json:"reputations"`
 	Tasks       map[string]*core.Task `json:"tasks"`
 }

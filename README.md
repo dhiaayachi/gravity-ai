@@ -3,7 +3,7 @@
 ## Why
 Gravity AI is a consensus platform for AI agents.
 A possible use case is a critical task where answer accuracy and 
-consensus is important and we would like a community of diverse agents 
+consensus is important, and we would like a community of diverse agents 
 to agree on a given answer/solution.
 
 ## Architecture
@@ -18,7 +18,7 @@ When an agents cluster is bootstrapped, agents will:
 1. Bootstrap raft
 2. Elect a raft leader
 3. persist an agent configuration that include the agent reputation (initialized to 0)
-4. Each agent will maintain connectivity with its backend LLM and healthcheck it
+4. Each agent will maintain connectivity with its backend LLM and health check it
 
 
 #### Leader election

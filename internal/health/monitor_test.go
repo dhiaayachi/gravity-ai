@@ -11,9 +11,9 @@ type mockClient struct {
 	err error
 }
 
-func (m *mockClient) Generate(prompt string) (string, error)         { return "", nil }
-func (m *mockClient) Validate(t, p string) (bool, error)             { return true, nil }
-func (m *mockClient) Aggregate(t string, a []string) (string, error) { return "agg", nil }
+func (m *mockClient) Generate(_ string) (string, error)              { return "", nil }
+func (m *mockClient) Validate(_, _ string) (bool, error)             { return true, nil }
+func (m *mockClient) Aggregate(_ string, _ []string) (string, error) { return "agg", nil }
 func (m *mockClient) HealthCheck() error                             { return m.err }
 
 var _ llm.Client = &mockClient{}

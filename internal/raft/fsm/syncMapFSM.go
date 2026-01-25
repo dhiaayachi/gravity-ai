@@ -26,7 +26,7 @@ type SyncMapFSM struct {
 func (f *SyncMapFSM) GetTaskAnswers(id string) ([]core.Answer, error) {
 	val, ok := f.TaskAnswers.Load(id)
 	if !ok {
-		return nil, fmt.Errorf("Task Answers not found: %s", id)
+		return nil, fmt.Errorf("task Answers not found: %s", id)
 	}
 	return val.([]core.Answer), nil
 }
@@ -34,7 +34,7 @@ func (f *SyncMapFSM) GetTaskAnswers(id string) ([]core.Answer, error) {
 func (f *SyncMapFSM) GetTaskVotes(id string) ([]core.Vote, error) {
 	val, ok := f.TaskVotes.Load(id)
 	if !ok {
-		return nil, fmt.Errorf("Task Votes not found: %s", id)
+		return nil, fmt.Errorf("task Votes not found: %s", id)
 	}
 	return val.([]core.Vote), nil
 }
@@ -42,7 +42,7 @@ func (f *SyncMapFSM) GetTaskVotes(id string) ([]core.Vote, error) {
 func (f *SyncMapFSM) GetTask(id string) (*core.Task, error) {
 	val, ok := f.Tasks.Load(id)
 	if !ok {
-		return nil, fmt.Errorf("Task not found: %s", id)
+		return nil, fmt.Errorf("task not found: %s", id)
 	}
 	return val.(*core.Task), nil
 }
@@ -184,7 +184,7 @@ func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 
 	// Copy answers/votes if needed, skipped for brevity in this step but should be here
 
-	return &FSMSnapshot{
+	return &Snapshot{
 		Reputations: reputations,
 		Tasks:       tasks,
 	}, nil
@@ -192,8 +192,10 @@ func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 
 // Restore restores the node to a previous state
 func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
-	var snapshot FSMSnapshotData // Define this struct
+	defer func(rc io.ReadCloser) {
+		_ = rc.Close()
+	}(rc)
+	var snapshot SnapshotData // Define this struct
 	if err := json.NewDecoder(rc).Decode(&snapshot); err != nil {
 		return err
 	}

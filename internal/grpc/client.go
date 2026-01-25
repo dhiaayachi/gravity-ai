@@ -28,7 +28,9 @@ func (c *Client) SubmitVote(ctx context.Context, leaderAddr string, taskID, agen
 	if err != nil {
 		return fmt.Errorf("failed to dial leader: %w", err)
 	}
-	defer conn.Close()
+	defer func(conn *grpc.ClientConn) {
+		_ = conn.Close()
+	}(conn)
 
 	client := pb.NewGravityServiceClient(conn)
 	req := &pb.SubmitVoteRequest{
@@ -54,7 +56,9 @@ func (c *Client) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, ag
 	if err != nil {
 		return fmt.Errorf("failed to dial leader: %w", err)
 	}
-	defer conn.Close()
+	defer func(conn *grpc.ClientConn) {
+		_ = conn.Close()
+	}(conn)
 
 	client := pb.NewGravityServiceClient(conn)
 	req := &pb.SubmitAnswerRequest{

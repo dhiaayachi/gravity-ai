@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -50,7 +51,7 @@ func (s *Server) Run() error {
 	}
 
 	s.logger.Info("Starting HTTP API (Ollama Compatible)", zap.String("bind-addr", s.addr))
-	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("failed to start http server: %w", err)
 	}
 	return nil

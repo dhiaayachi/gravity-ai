@@ -23,12 +23,12 @@ func NewOllamaClient(host string, model string) (*OllamaClient, error) {
 		model = "deepseek-v2:latest"
 	}
 
-	url, err := url.Parse(host)
+	u, err := url.Parse(host)
 	if err != nil {
 		return nil, err
 	}
 
-	client := api.NewClient(url, http.DefaultClient)
+	client := api.NewClient(u, http.DefaultClient)
 	return &OllamaClient{
 		client: client,
 		model:  model,

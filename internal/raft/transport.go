@@ -38,10 +38,9 @@ func (t *ReputationTransport) run() {
 		switch req := rpc.Command.(type) {
 		case *raft.RequestVoteRequest:
 			// Check reputation
-			// Check reputation
 			var candidateRep, localRep int
 
-			if val, ok := t.fsm.Reputations.Load(string(req.Candidate)); ok {
+			if val, ok := t.fsm.Reputations.Load(string(req.RPCHeader.Addr)); ok {
 				candidateRep = val.(int)
 			}
 			if val, ok := t.fsm.Reputations.Load(t.localID); ok {
@@ -50,7 +49,7 @@ func (t *ReputationTransport) run() {
 
 			if localRep > candidateRep {
 				// Reject vote
-				log.Printf("[%s] Rejecting vote from %s (Rep: %d) because local rep (%d) is higher", t.localID, req.Candidate, candidateRep, localRep)
+				log.Printf("[%s] Rejecting vote from %s (Rep: %d) because local rep (%d) is higher", t.localID, req.RPCHeader.Addr, candidateRep, localRep)
 				rpc.Respond(&raft.RequestVoteResponse{
 					Term:    req.Term,
 					Granted: false,

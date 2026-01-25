@@ -54,8 +54,8 @@ func (s *Server) GetGrpcServer() *grpc.Server {
 	return s.server
 }
 
-func (s *Server) getLeaderConn(ctx context.Context) (*grpc.ClientConn, error) {
-	leaderAddr := s.node.Raft.Leader()
+func (s *Server) getLeaderConn() (*grpc.ClientConn, error) {
+	leaderAddr, _ := s.node.Raft.LeaderWithID()
 	if leaderAddr == "" {
 		return nil, fmt.Errorf("no leader")
 	}
@@ -126,15 +126,20 @@ func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb
 
 func forwardToLeader[Req any, Res any](ctx context.Context, s *Server, req Req, method func(pb.GravityServiceClient, context.Context, Req) (*Res, error)) (*Res, error, bool) {
 	if s.node.Raft.State() != hashicorpRaft.Leader {
-		conn, err := s.getLeaderConn(ctx)
+		conn, err := s.getLeaderConn()
 		if err != nil {
 			return nil, err, false
 		}
-		defer conn.Close()
+		defer func(conn *grpc.ClientConn) {
+			err := conn.Close()
+			if err != nil {
+				s.logger.Warn("Failed to close leader connection", zap.Error(err))
+			}
+		}(conn)
 		client := pb.NewGravityServiceClient(conn)
 		res, err := method(client, ctx, req)
 		return res, err, true
-	} else {
-		return nil, nil, false
 	}
+
+	return nil, nil, false
 }

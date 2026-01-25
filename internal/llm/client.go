@@ -10,7 +10,7 @@ type Client interface {
 	HealthCheck() error
 }
 
-// cleanJSONMarkdown removes markdown code block formatting for JSON
+// cleanJSONMarkdown removes Markdown code block formatting for JSON
 func cleanJSONMarkdown(content string) string {
 	content = strings.TrimSpace(content)
 	content = strings.TrimPrefix(content, "```json")

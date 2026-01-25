@@ -95,7 +95,7 @@ data-dir: /dir/config
 	// 2. Setup Env (Medium Priority)
 	t.Setenv("GRAVITY_BIND_ADDR", "127.0.0.1:1002")
 	t.Setenv("GRAVITY_LOG_LEVEL", "panic")
-	// data_dir not in env, should fallback to config
+	// data_dir not in env, should fall back to config
 
 	// 3. Setup Flags (Highest Priority)
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)

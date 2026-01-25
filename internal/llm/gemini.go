@@ -71,7 +71,7 @@ Output ONLY valid JSON.
 		return false, err
 	}
 
-	// Clean up potential markdown code blocks
+	// Clean up potential Markdown code blocks
 	content = cleanJSONMarkdown(content)
 
 	var validation validationResponse

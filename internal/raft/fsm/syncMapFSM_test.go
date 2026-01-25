@@ -160,7 +160,7 @@ func TestFSM_SnapshotRestore(t *testing.T) {
 	}
 
 	// Verify snapshot content logic without persisting
-	fsmSnapshot := snap.(*FSMSnapshot) // type assertion
+	fsmSnapshot := snap.(*Snapshot) // type assertion
 	if fsmSnapshot.Reputations["agentA"] != 50 {
 		t.Errorf("Snapshot reputation mismatch")
 	}
@@ -177,8 +177,8 @@ func TestFSM_Restore(t *testing.T) {
 	// Create a pipe or buffer
 	reader, writer := io.Pipe()
 	go func() {
-		writer.Write([]byte(jsonState))
-		writer.Close()
+		_, _ = writer.Write([]byte(jsonState))
+		_ = writer.Close()
 	}()
 
 	err := fsm.Restore(reader)
@@ -235,7 +235,7 @@ func TestFSM_Persist(t *testing.T) {
 	}()
 
 	// Read from sink
-	var snapshotData FSMSnapshotData
+	var snapshotData SnapshotData
 	err := json.NewDecoder(sink.PipeReader).Decode(&snapshotData)
 	if err != nil {
 		t.Fatalf("Failed to decode persist output: %v", err)

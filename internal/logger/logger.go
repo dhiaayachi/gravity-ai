@@ -42,10 +42,3 @@ func parseLevel(level string) zapcore.Level {
 		return zapcore.InfoLevel
 	}
 }
-
-// Log is a global logger for convenience if needed, but dependency injection is preferred.
-var Log *zap.Logger
-
-func init() {
-	Log, _ = zap.NewProduction()
-}

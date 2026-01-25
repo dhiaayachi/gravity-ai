@@ -12,7 +12,6 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
-	"github.com/dhiaayachi/gravity-ai/internal/health"
 	gravityHttp "github.com/dhiaayachi/gravity-ai/internal/http"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/logger"
@@ -60,7 +59,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
-	defer appLogger.Sync()
+	defer func(appLogger *zap.Logger) {
+		err := appLogger.Sync()
+		if err != nil {
+			log.Fatalf("Failed to sync logger: %v", err)
+		}
+	}(appLogger)
 
 	appLogger.Info("Starting Agent", zap.String("id", cfg.ID), zap.String("bind-addr", cfg.BindAddr))
 
@@ -135,12 +139,11 @@ func main() {
 		appLogger.Fatal("Unknown LLM provider", zap.String("provider", cfg.LLMProvider))
 	}
 
-	healthMonitor := health.NewMonitor(llmClient)
 	// We pass 0 as port or remove port dependency in client next
 	clusterClient := agentGrpc.NewClient()
 
 	tasksMgr := tasks_manager.TasksManager{}
-	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient, &tasksMgr, appLogger)
+	eng := engine.NewEngine(node, llmClient, clusterClient, &tasksMgr, appLogger)
 
 	eng.Start()
 

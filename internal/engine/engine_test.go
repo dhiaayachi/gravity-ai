@@ -67,15 +67,15 @@ type mockLLM struct {
 	validErr  error
 }
 
-func (m *mockLLM) Generate(prompt string) (string, error) {
+func (m *mockLLM) Generate(_ string) (string, error) {
 	return m.genResp, m.genErr
 }
 
-func (m *mockLLM) Validate(taskContent string, proposal string) (bool, error) {
+func (m *mockLLM) Validate(_ string, _ string) (bool, error) {
 	return m.validResp, m.validErr
 }
 
-func (m *mockLLM) Aggregate(taskContent string, answers []string) (string, error) {
+func (m *mockLLM) Aggregate(_ string, _ []string) (string, error) {
 	return "Aggregated: " + m.genResp, nil
 }
 
@@ -92,7 +92,7 @@ type mockClusterClient struct {
 	answer       string
 }
 
-func (m *mockClusterClient) SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error {
+func (m *mockClusterClient) SubmitVote(_ context.Context, _ string, taskID, agentID string, accepted bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
@@ -101,7 +101,7 @@ func (m *mockClusterClient) SubmitVote(ctx context.Context, leaderAddr string, t
 	m.voteAccepted = accepted
 	return nil
 }
-func (m *mockClusterClient) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, answer string) error {
+func (m *mockClusterClient) SubmitAnswer(_ context.Context, _ string, taskID, agentID string, answer string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
@@ -122,7 +122,7 @@ type testHarness struct {
 
 type mockTaskNotifier struct{}
 
-func (m *mockTaskNotifier) NotifyTaskCompletion(task *core.Task) {}
+func (m *mockTaskNotifier) NotifyTaskCompletion(_ *core.Task) {}
 
 func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	// Use t.Name() to avoid address collisions in InmemTransport
@@ -153,7 +153,10 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 			},
 		},
 	}
-	raft.BootstrapCluster(conf, store, store, snap, transport, bootstrapConfig)
+	err := raft.BootstrapCluster(conf, store, store, snap, transport, bootstrapConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	r, err := raft.NewRaft(conf, fsm, store, store, snap, transport)
 	if err != nil {
@@ -204,7 +207,10 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 
 	// Register cleanup
 	t.Cleanup(func() {
-		r.Shutdown().Error()
+		err := r.Shutdown().Error()
+		if err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	return &testHarness{
@@ -478,7 +484,7 @@ func TestNewEngine(t *testing.T) {
 	}
 	// NewEngine accesses node.Raft in defaultCommandSender
 
-	eng := NewEngine(node, nil, nil, nil, &tasks_manager.TasksManager{}, zap.NewNop())
+	eng := NewEngine(node, nil, nil, &tasks_manager.TasksManager{}, zap.NewNop())
 	if eng == nil {
 		t.Fatal("NewEngine returned nil")
 	}

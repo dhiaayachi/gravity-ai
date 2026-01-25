@@ -13,7 +13,7 @@ const (
 	Version = "0.0.1"
 )
 
-// Ollama API Types
+// OllamaGenerateRequest Ollama API Types
 type OllamaGenerateRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
