@@ -145,15 +145,10 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 			vote := event.Data.(*core.Vote)
 			if val, ok := e.fsm.Tasks.Load(vote.TaskID); ok {
 				task := val.(*core.Task)
-				e.finalizeTask(task)
+				e.runFinalizeTask(task)
 			}
 		}
 	}
-}
-
-func (e *Engine) notifyTaskCompletion(task *core.Task) {
-	e.stopTimer(task.ID) // Cleanup timer if any
-	e.taskNotifier.NotifyTaskCompletion(task)
 }
 
 func (e *Engine) handleTaskAdmitted(task *core.Task) {
@@ -166,6 +161,72 @@ func (e *Engine) handleTaskAdmitted(task *core.Task) {
 
 	// Every node participates in brainstorm as a worker agent
 	e.runBrainstormPhase(task)
+}
+
+func (e *Engine) handleTaskTimeout(taskID string) {
+	e.logger.Warn("Timeout triggered", zap.String("task_id", taskID))
+	e.timers.Delete(taskID)
+
+	// Check task status
+	var task *core.Task
+	if val, ok := e.fsm.Tasks.Load(taskID); ok {
+		task = val.(*core.Task)
+	} else {
+		return // Task not found
+	}
+
+	if task.Status == core.TaskStatusAdmitted {
+		// Proposal Timeout
+		if e.clusterState.IsLeader() {
+			// Check if we have enough answers to force proposal
+			var answers []core.Answer
+			if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
+				answers = val.([]core.Answer)
+			}
+
+			serverCount, err := e.clusterState.GetServerCount()
+			if err != nil {
+				e.logger.Error("Failed to get server count", zap.Error(err), zap.String("task_id", task.ID))
+				return
+			}
+			quorum := serverCount/2 + 1
+
+			if len(answers) >= quorum {
+				e.runProposalPhase(task, true)
+				return // Successfully triggered or tried
+			}
+
+			// If not enough answers, fall through to failure logic
+		}
+	}
+
+	// Fallthrough for failure (Voting timeout or Brainstorming timeout with < Quorum)
+	// Default failure behavior for other states (e.g. Voting)
+	failMsg := "Phase timeout exceeded"
+	e.logger.Error("Task reached timeout, failing", zap.String("task_id", taskID), zap.String("reason", failMsg))
+
+	// Create failed task update
+	failedTask := &core.Task{
+		ID:     taskID,
+		Status: core.TaskStatusFailed,
+		Result: fmt.Sprintf("Timeout: %s", failMsg),
+	}
+
+	propBytes, _ := json.Marshal(failedTask)
+	cmd := raftInternal.LogCommand{
+		Type:  raftInternal.CommandTypeUpdateTask,
+		Value: propBytes,
+	}
+	b, _ := json.Marshal(cmd)
+
+	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+		e.logger.Error("Failed to apply timeout failure", zap.Error(f.Error()), zap.String("task_id", taskID))
+	}
+}
+
+func (e *Engine) notifyTaskCompletion(task *core.Task) {
+	e.stopTimer(task.ID) // Cleanup timer if any
+	e.taskNotifier.NotifyTaskCompletion(task)
 }
 
 func (e *Engine) runBrainstormPhase(task *core.Task) {
@@ -331,7 +392,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	}
 }
 
-func (e *Engine) finalizeTask(task *core.Task) {
+func (e *Engine) runFinalizeTask(task *core.Task) {
 	// Guard: Check if task is already final (Done or Failed)
 	// We re-check FSM status because task variable might be old
 	if val, ok := e.fsm.Tasks.Load(task.ID); ok {
@@ -411,67 +472,6 @@ func (e *Engine) startTimer(taskID string, duration time.Duration) {
 	})
 
 	e.timers.Store(taskID, timer)
-}
-
-func (e *Engine) handleTaskTimeout(taskID string) {
-	e.logger.Warn("Timeout triggered", zap.String("task_id", taskID))
-	e.timers.Delete(taskID)
-
-	// Check task status
-	var task *core.Task
-	if val, ok := e.fsm.Tasks.Load(taskID); ok {
-		task = val.(*core.Task)
-	} else {
-		return // Task not found
-	}
-
-	if task.Status == core.TaskStatusAdmitted {
-		// Proposal Timeout
-		if e.clusterState.IsLeader() {
-			// Check if we have enough answers to force proposal
-			var answers []core.Answer
-			if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
-				answers = val.([]core.Answer)
-			}
-
-			serverCount, err := e.clusterState.GetServerCount()
-			if err != nil {
-				e.logger.Error("Failed to get server count", zap.Error(err), zap.String("task_id", task.ID))
-				return
-			}
-			quorum := serverCount/2 + 1
-
-			if len(answers) >= quorum {
-				e.runProposalPhase(task, true)
-				return // Successfully triggered or tried
-			}
-
-			// If not enough answers, fall through to failure logic
-		}
-	}
-
-	// Fallthrough for failure (Voting timeout or Brainstorming timeout with < Quorum)
-	// Default failure behavior for other states (e.g. Voting)
-	failMsg := "Phase timeout exceeded"
-	e.logger.Error("Task reached timeout, failing", zap.String("task_id", taskID), zap.String("reason", failMsg))
-
-	// Create failed task update
-	failedTask := &core.Task{
-		ID:     taskID,
-		Status: core.TaskStatusFailed,
-		Result: fmt.Sprintf("Timeout: %s", failMsg),
-	}
-
-	propBytes, _ := json.Marshal(failedTask)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeUpdateTask,
-		Value: propBytes,
-	}
-	b, _ := json.Marshal(cmd)
-
-	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		e.logger.Error("Failed to apply timeout failure", zap.Error(f.Error()), zap.String("task_id", taskID))
-	}
 }
 
 func (e *Engine) stopTimer(taskID string) {

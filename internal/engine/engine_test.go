@@ -343,7 +343,7 @@ func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 	}
 	h.fsm.TaskVotes.Store("t1", votes)
 
-	h.engine.finalizeTask(task)
+	h.engine.runFinalizeTask(task)
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -370,7 +370,7 @@ func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 	}
 	h.fsm.TaskVotes.Store("t1", votes)
 
-	h.engine.finalizeTask(task)
+	h.engine.runFinalizeTask(task)
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -424,11 +424,11 @@ func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	}
 	h.fsm.TaskVotes.Store("t1", votes)
 
-	h.engine.finalizeTask(task)
+	h.engine.runFinalizeTask(task)
 
 	// Verify NO state change since votes < 2?
 	// It should NOT finalize if votes < quorum?
-	// But current code finalizeTask just runs.
+	// But current code runFinalizeTask just runs.
 	// Actually, verify it DID NOT change to Done/Failed if not enough votes?
 	// Or maybe it does fail?
 	// The test title says "NoConsensus", which usually means "Rejected" or "Wait"?
@@ -445,12 +445,12 @@ func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	// h.cmdSender check: "Expected NO command"
 	// This implies previous test expected it to do NOTHING?
 	// Wait, if not enough votes, does it fail immediately?
-	// Check engine.go finalizeTask:
+	// Check engine.go runFinalizeTask:
 	// if len(votes) < quorum { return } // Wait for more votes?
 	// OR does it decide based on collected votes?
 	// Current engine.go (I need to check) typically waits for ALL or timeout?
-	// No, finalizeTask is triggered by EventVoteSubmitted.
-	// let's check finalizeTask implementation.
+	// No, runFinalizeTask is triggered by EventVoteSubmitted.
+	// let's check runFinalizeTask implementation.
 
 	// If it was checking "Expected NO command", it means it expected to block/wait.
 	// verification:
