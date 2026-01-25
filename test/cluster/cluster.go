@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
+	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
-	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	raftgrpc "github.com/dhiaayachi/raft-grpc-transport"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"

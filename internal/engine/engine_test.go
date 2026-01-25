@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
+	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
-	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/tasks-manager"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
