@@ -14,8 +14,5 @@ FROM alpine:latest
 WORKDIR /app
 
 COPY --from=builder /app/gravity-agent .
-COPY --from=builder /app/examples/3-nodes/start.sh .
 
-RUN chmod +x start.sh && apk add --no-cache curl
-
-ENTRYPOINT ["./start.sh"]
+CMD ["./gravity-agent"]

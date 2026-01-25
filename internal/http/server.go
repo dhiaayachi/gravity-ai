@@ -49,7 +49,7 @@ func (s *Server) Run() error {
 		Handler: s.router,
 	}
 
-	s.logger.Info("Starting HTTP API (Ollama Compatible)", zap.String("addr", s.addr))
+	s.logger.Info("Starting HTTP API (Ollama Compatible)", zap.String("bind-addr", s.addr))
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("failed to start http server: %w", err)
 	}

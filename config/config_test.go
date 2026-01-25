@@ -25,10 +25,10 @@ func TestLoadConfig_ConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "gravity.yaml")
 	configContent := []byte(`
-addr: 127.0.0.1:9090
-http_addr: :9091
-log_level: debug
-data_dir: /tmp/gravity
+bind-addr: 127.0.0.1:9090
+http-addr: :9091
+log-level: debug
+data-dir: /tmp/gravity
 `)
 	err := os.WriteFile(configFile, configContent, 0644)
 	require.NoError(t, err)
@@ -44,7 +44,7 @@ data_dir: /tmp/gravity
 
 func TestLoadConfig_Env(t *testing.T) {
 	// Set environment variables
-	t.Setenv("GRAVITY_ADDR", "127.0.0.1:7070")
+	t.Setenv("GRAVITY_BIND_ADDR", "127.0.0.1:7070")
 	t.Setenv("GRAVITY_HTTP_ADDR", ":7071")
 	t.Setenv("GRAVITY_LOG_LEVEL", "warn")
 	t.Setenv("GRAVITY_DATA_DIR", "/var/lib/gravity")
@@ -61,13 +61,13 @@ func TestLoadConfig_Env(t *testing.T) {
 func TestLoadConfig_Flags(t *testing.T) {
 	// Define flags
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	flags.String("addr", "127.0.0.1:8000", "bind address")
-	flags.String("http_addr", ":8080", "http address")
-	flags.String("log_level", "info", "log level")
-	flags.String("data_dir", "./data", "data directory")
+	flags.String("bind-addr", "127.0.0.1:8000", "bind address")
+	flags.String("http-addr", ":8080", "http address")
+	flags.String("log-level", "info", "log level")
+	flags.String("data-dir", "./data", "data directory")
 
 	// Parse flags
-	err := flags.Parse([]string{"--addr", "127.0.0.1:6060", "--http_addr", ":6061", "--log_level", "error", "--data_dir", "/mnt/gravity"})
+	err := flags.Parse([]string{"--bind-addr", "127.0.0.1:6060", "--http-addr", ":6061", "--log-level", "error", "--data-dir", "/mnt/gravity"})
 	require.NoError(t, err)
 
 	config, err := LoadConfig("", flags)
@@ -84,29 +84,29 @@ func TestLoadConfig_Priority(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "gravity.yaml")
 	configContent := []byte(`
-addr: 127.0.0.1:1001
-http_addr: :2001
-log_level: trace
-data_dir: /dir/config
+bind-addr: 127.0.0.1:1001
+http-addr: :2001
+log-level: trace
+data-dir: /dir/config
 `)
 	err := os.WriteFile(configFile, configContent, 0644)
 	require.NoError(t, err)
 
 	// 2. Setup Env (Medium Priority)
-	t.Setenv("GRAVITY_ADDR", "127.0.0.1:1002")
+	t.Setenv("GRAVITY_BIND_ADDR", "127.0.0.1:1002")
 	t.Setenv("GRAVITY_LOG_LEVEL", "panic")
 	// data_dir not in env, should fallback to config
 
 	// 3. Setup Flags (Highest Priority)
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	flags.String("addr", "127.0.0.1:8000", "bind address")
-	flags.String("http_addr", ":8080", "http address")
-	flags.String("log_level", "info", "log level")
-	flags.String("data_dir", "./data", "data directory")
+	flags.String("bind-addr", "127.0.0.1:8000", "bind address")
+	flags.String("http-addr", ":8080", "http address")
+	flags.String("log-level", "info", "log level")
+	flags.String("data-dir", "./data", "data directory")
 
 	// Parse flags
 	// addr is set in flag, should win over env and config
-	err = flags.Parse([]string{"--addr", "127.0.0.1:1003"})
+	err = flags.Parse([]string{"--bind-addr", "127.0.0.1:1003"})
 	require.NoError(t, err)
 
 	config, err := LoadConfig(configFile, flags)

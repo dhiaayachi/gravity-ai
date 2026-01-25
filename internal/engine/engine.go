@@ -185,6 +185,8 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 		return
 	}
 
+	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("leader_addr", leaderAddr), zap.String("answer", ansContent))
+	// Submit answer to leader
 	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, string(e.nodeConfig.ID), ansContent)
 	if err != nil {
 		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
@@ -265,10 +267,10 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 }
 
 func (e *Engine) runVotePhase(task *core.Task) {
-	log.Printf("[%s] Validating and casting vote for task %s", e.nodeConfig.ID, task.ID)
 
 	// Use LLM to validate the proposal
 	isValid, err := e.llm.Validate(task.Content, task.Result)
+	log.Printf("[%s] Validating and casting vote for task %s voted: %v", e.nodeConfig.ID, task.ID, isValid)
 	if err != nil {
 		log.Printf("[%s] LLM validation failed: %v", e.nodeConfig.ID, err)
 		// Decide default behavior on error. For now, assume reject if we can't validate.

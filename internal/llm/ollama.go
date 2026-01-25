@@ -20,7 +20,7 @@ func NewOllamaClient(host string, model string) (*OllamaClient, error) {
 		host = "http://localhost:11434"
 	}
 	if model == "" {
-		model = "llama2"
+		model = "deepseek-v2:latest"
 	}
 
 	url, err := url.Parse(host)

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/config"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
@@ -27,19 +28,19 @@ func main() {
 	// Define Flags
 	// We use pflag for better compatibility with Viper (and standard flags)
 	// These flags will override config file and env vars
-	pflag.String("id", "agent-1", "Agent ID")
-	pflag.String("addr", "127.0.0.1:8000", "Bind address")
-	pflag.String("http_addr", ":8080", "HTTP Service address")
-	pflag.String("data_dir", "./data", "Data directory")
-	pflag.StringToString("peers", nil, "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001)")
+	pflag.String("agent-id", "agent-1", "Agent ID")
+	pflag.String("bind-addr", "127.0.0.1:8000", "Bind address")
+	pflag.String("http-addr", ":8080", "HTTP Service address")
+	pflag.String("data-dir", "./data", "Data directory")
+	pflag.String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001)")
 	pflag.Bool("bootstrap", false, "Bootstrap the cluster")
-	pflag.String("log_level", "info", "Log level (debug, info, warn, error)")
+	pflag.String("log-level", "info", "Log level (debug, info, warn, error)")
 
 	// LLM Flags
-	pflag.String("llm_provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
-	pflag.String("api_key", "", "API Key for llm providers")
+	pflag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
+	pflag.String("api-key", "", "API Key for llm providers")
 	pflag.String("model", "", "Model name (optional)")
-	pflag.String("ollama_url", "http://localhost:11434", "Ollama URL")
+	pflag.String("ollama-url", "http://localhost:11434", "Ollama URL")
 
 	// Config File Flag (not bound to config struct, just for loading)
 	cfgFile := pflag.String("config", "", "config file (default is ./gravity.yaml)")
@@ -61,7 +62,7 @@ func main() {
 	}
 	defer appLogger.Sync()
 
-	appLogger.Info("Starting Agent", zap.String("id", cfg.ID), zap.String("bind_addr", cfg.BindAddr))
+	appLogger.Info("Starting Agent", zap.String("id", cfg.ID), zap.String("bind-addr", cfg.BindAddr))
 
 	if cfg.Bootstrap {
 		appLogger.Info("Bootstrapping cluster", zap.Int("peer_count", len(cfg.Peers)))
@@ -72,7 +73,7 @@ func main() {
 	// Create the main listener
 	lis, err := net.Listen("tcp", cfg.BindAddr)
 	if err != nil {
-		appLogger.Fatal("Failed to listen", zap.String("addr", cfg.BindAddr), zap.Error(err))
+		appLogger.Fatal("Failed to listen", zap.String("bind-addr", cfg.BindAddr), zap.Error(err))
 	}
 
 	// Create gRPC Server
@@ -85,13 +86,22 @@ func main() {
 		appLogger.Fatal("Failed to create raft transport", zap.Error(err))
 	}
 
+	peers := make(map[string]string)
+	p := strings.Split(cfg.Peers, ",")
+	for _, v := range p {
+		s := strings.Split(v, "=")
+		if len(s) != 2 {
+			appLogger.Fatal("Invalid peer address", zap.String("peer", v))
+		}
+		peers[s[0]] = s[1]
+	}
 	// Setup Raft Node
 	raftConfig := &raft.Config{
 		ID:        cfg.ID,
 		DataDir:   cfg.DataDir,
 		BindAddr:  cfg.BindAddr,
 		Bootstrap: cfg.Bootstrap,
-		Peers:     cfg.Peers,
+		Peers:     peers,
 	}
 
 	node, err := raft.NewAgentNode(raftConfig, tm, appLogger)

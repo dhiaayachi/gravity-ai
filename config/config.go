@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -10,23 +11,23 @@ import (
 // Config holds the application configuration.
 type Config struct {
 	// General
-	LogLevel string `mapstructure:"log_level"`
+	LogLevel string `mapstructure:"log-level"`
 
 	// Network
-	BindAddr string `mapstructure:"addr"`
-	HTTPAddr string `mapstructure:"http_addr"`
+	BindAddr string `mapstructure:"bind-addr"`
+	HTTPAddr string `mapstructure:"http-addr"`
 
 	// Raft
-	ID        string            `mapstructure:"id"`
-	DataDir   string            `mapstructure:"data_dir"`
-	Bootstrap bool              `mapstructure:"bootstrap"`
-	Peers     map[string]string `mapstructure:"peers"`
+	ID        string `mapstructure:"id"`
+	DataDir   string `mapstructure:"data-dir"`
+	Bootstrap bool   `mapstructure:"bootstrap"`
+	Peers     string `mapstructure:"peers"`
 
 	// LLM
-	LLMProvider string `mapstructure:"llm_provider"`
-	APIKey      string `mapstructure:"api_key"` // Watch out for secrets!
+	LLMProvider string `mapstructure:"llm-provider"`
+	APIKey      string `mapstructure:"api-key"` // Watch out for secrets!
 	Model       string `mapstructure:"model"`
-	OllamaURL   string `mapstructure:"ollama_url"`
+	OllamaURL   string `mapstructure:"ollama-url"`
 }
 
 // LoadConfig loads configuration from CLI flags, environment variables, and config file.
@@ -35,14 +36,14 @@ func LoadConfig(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 	v := viper.New()
 
 	// 1. Set Defaults
-	v.SetDefault("log_level", "info")
-	v.SetDefault("addr", "127.0.0.1:8000")
-	v.SetDefault("http_addr", ":8080")
+	v.SetDefault("log-level", "info")
+	v.SetDefault("bind-addr", "127.0.0.1:8000")
+	v.SetDefault("http-addr", ":8080")
 	v.SetDefault("id", "agent-1")
-	v.SetDefault("data_dir", "./data")
+	v.SetDefault("data-dir", "./data")
 	v.SetDefault("bootstrap", false)
-	v.SetDefault("llm_provider", "mock")
-	v.SetDefault("ollama_url", "http://localhost:11434")
+	v.SetDefault("llm-provider", "mock")
+	v.SetDefault("ollama-url", "http://localhost:11434")
 
 	// 2. Load Config File
 	if cfgFile != "" {
@@ -56,7 +57,8 @@ func LoadConfig(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 	}
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundError) {
 			return nil, err
 		}
 		// Config file is optional
@@ -79,6 +81,6 @@ func LoadConfig(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, err
 	}
-
+	v.Debug()
 	return &config, nil
 }
