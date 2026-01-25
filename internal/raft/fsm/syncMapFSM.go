@@ -1,4 +1,4 @@
-package raft
+package fsm
 
 import (
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/raft"
 )
 
-// FSM is the state machine for the Raft system
-type FSM struct {
+// SyncMapFSM is the state machine for the Raft system
+type SyncMapFSM struct {
 	NodeID      string
 	Reputations sync.Map // AgentID -> int
 	Tasks       sync.Map // TaskID -> *core.Task
@@ -21,6 +21,34 @@ type FSM struct {
 
 	// Events channel to notify Engine of state changes
 	EventCh chan Event
+}
+
+func (f *SyncMapFSM) GetTaskAnswers(id string) ([]core.Answer, error) {
+	val, ok := f.TaskAnswers.Load(id)
+	if !ok {
+		return nil, fmt.Errorf("Task Answers not found: %s", id)
+	}
+	return val.([]core.Answer), nil
+}
+
+func (f *SyncMapFSM) GetTaskVotes(id string) ([]core.Vote, error) {
+	val, ok := f.TaskVotes.Load(id)
+	if !ok {
+		return nil, fmt.Errorf("Task Votes not found: %s", id)
+	}
+	return val.([]core.Vote), nil
+}
+
+func (f *SyncMapFSM) GetTask(id string) (*core.Task, error) {
+	val, ok := f.Tasks.Load(id)
+	if !ok {
+		return nil, fmt.Errorf("Task not found: %s", id)
+	}
+	return val.(*core.Task), nil
+}
+
+func (f *SyncMapFSM) EventsConsumer() chan Event {
+	return f.EventCh
 }
 
 type EventType string
@@ -37,15 +65,15 @@ type Event struct {
 	Data interface{}
 }
 
-func NewFSM(nodeID string) *FSM {
-	return &FSM{
+func NewSyncMapFSM(nodeID string) *SyncMapFSM {
+	return &SyncMapFSM{
 		NodeID:  nodeID,
 		EventCh: make(chan Event, 100),
 	}
 }
 
-// Apply applies a Raft log entry to the FSM
-func (f *FSM) Apply(logEntry *raft.Log) interface{} {
+// Apply applies a Raft log entry to the SyncMapFSM
+func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 	var cmd LogCommand
 	if err := json.Unmarshal(logEntry.Data, &cmd); err != nil {
 		return fmt.Errorf("failed to unmarshal log data: %w", err)
@@ -70,7 +98,7 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 		select {
 		case f.EventCh <- Event{Type: EventTaskAdmitted, Data: &task}:
 		default:
-			log.Printf("[%s] FSM EventCh full, dropping event", f.NodeID)
+			log.Printf("[%s] SyncMapFSM EventCh full, dropping event", f.NodeID)
 		}
 
 	case CommandTypeSubmitAnswer:
@@ -139,7 +167,7 @@ func (f *FSM) Apply(logEntry *raft.Log) interface{} {
 }
 
 // Snapshot returns a snapshot of the key-value store
-func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
+func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 	// Deep copy to avoid race conditions during serialization
 	reputations := make(map[string]int)
 	f.Reputations.Range(func(key, value interface{}) bool {
@@ -163,7 +191,7 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 }
 
 // Restore restores the node to a previous state
-func (f *FSM) Restore(rc io.ReadCloser) error {
+func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
 	defer rc.Close()
 	var snapshot FSMSnapshotData // Define this struct
 	if err := json.NewDecoder(rc).Decode(&snapshot); err != nil {
@@ -190,52 +218,4 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 	f.TaskVotes = sync.Map{}
 
 	return nil
-}
-
-// Helper types for Logs and Snapshots
-
-type CommandType string
-
-const (
-	CommandTypeUpdateReputation CommandType = "update_reputation"
-	CommandTypeAdmitTask        CommandType = "admit_task"
-	CommandTypeSubmitAnswer     CommandType = "submit_answer"
-	CommandTypeUpdateTask       CommandType = "update_task"
-	CommandTypeSubmitVote       CommandType = "submit_vote"
-)
-
-type LogCommand struct {
-	Type    CommandType     `json:"type"`
-	AgentID string          `json:"agent_id,omitempty"`
-	Value   json.RawMessage `json:"value,omitempty"`
-}
-
-type FSMSnapshot struct {
-	Reputations map[string]int
-	Tasks       map[string]*core.Task
-}
-
-func (s *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
-	err := func() error {
-		b, err := json.Marshal(s) // Use the struct itself
-		if err != nil {
-			return err
-		}
-		if _, err := sink.Write(b); err != nil {
-			return err
-		}
-		return nil
-	}()
-	if err != nil {
-		sink.Cancel()
-		return err
-	}
-	return sink.Close()
-}
-
-func (s *FSMSnapshot) Release() {}
-
-type FSMSnapshotData struct {
-	Reputations map[string]int        `json:"reputations"`
-	Tasks       map[string]*core.Task `json:"tasks"`
 }

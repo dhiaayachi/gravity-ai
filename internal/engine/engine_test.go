@@ -10,6 +10,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/core"
 	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	fsm2 "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
@@ -112,7 +113,7 @@ func (m *mockClusterClient) SubmitAnswer(ctx context.Context, leaderAddr string,
 
 type testHarness struct {
 	engine     *Engine
-	fsm        *raftInternal.FSM
+	fsm        *fsm2.SyncMapFSM
 	cluster    *mockClusterState
 	llm        *mockLLM
 	nodeConfig *raftInternal.Config
@@ -130,7 +131,7 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	addr := raft.ServerAddress(t.Name())
 
 	// 1. Setup In-Memory Raft
-	fsm := raftInternal.NewFSM(string(nodeID))
+	fsm := fsm2.NewSyncMapFSM(string(nodeID))
 	store := raft.NewInmemStore()
 	snap, _ := raft.NewFileSnapshotStore(t.TempDir(), 1, os.Stderr)
 
@@ -245,7 +246,7 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
 	h.fsm.Tasks.Store("t1", task)
 
-	// Add answer to FSM (Need 2 for quorum of 3)
+	// Add answer to SyncMapFSM (Need 2 for quorum of 3)
 	h.fsm.TaskAnswers.Store("t1", []core.Answer{
 		{TaskID: "t1", Content: "ans1"},
 		{TaskID: "t1", Content: "ans2"},
@@ -263,7 +264,7 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 
 	val, ok := h.fsm.Tasks.Load(task.ID)
 	if !ok {
-		t.Fatal("Task not in FSM")
+		t.Fatal("Task not in SyncMapFSM")
 	}
 	taskUpd := val.(*core.Task)
 	if taskUpd.Status != core.TaskStatusProposal {
@@ -317,15 +318,15 @@ func TestFlow_Vote(t *testing.T) {
 	h.engine.runVotePhase(task)
 
 	time.Sleep(100 * time.Millisecond)
-	// Verify Vote in FSM/Vote storage
+	// Verify Vote in SyncMapFSM/Vote storage
 	// We check internal raft logic or assume log applied if no error.
-	// FSM usually updates TaskVotes?
+	// SyncMapFSM usually updates TaskVotes?
 	// Let's assume yes for now.
 	if _, ok := h.fsm.TaskVotes.Load(task.ID); !ok {
 		// Wait more
 		time.Sleep(100 * time.Millisecond)
 		if _, ok := h.fsm.TaskVotes.Load(task.ID); !ok {
-			t.Error("No votes found in FSM")
+			t.Error("No votes found in SyncMapFSM")
 		}
 	}
 }
@@ -333,7 +334,7 @@ func TestFlow_Vote(t *testing.T) {
 func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
-	h.fsm.Tasks.Store("t1", task) // Must match in FSM
+	h.fsm.Tasks.Store("t1", task) // Must match in SyncMapFSM
 
 	// Stores votes: 2/3 accepted
 	votes := []core.Vote{
@@ -350,7 +351,7 @@ func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 	// Verify Task Status Done
 	val, ok := h.fsm.Tasks.Load(task.ID)
 	if !ok {
-		t.Fatal("Task not in FSM")
+		t.Fatal("Task not in SyncMapFSM")
 	}
 	finalTask := val.(*core.Task)
 	if finalTask.Status != core.TaskStatusDone {
@@ -377,7 +378,7 @@ func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 	// Verify Task Status Failed
 	val, ok := h.fsm.Tasks.Load(task.ID)
 	if !ok {
-		t.Fatal("Task not in FSM")
+		t.Fatal("Task not in SyncMapFSM")
 	}
 	finalTask := val.(*core.Task)
 	if finalTask.Status != core.TaskStatusFailed {
@@ -399,12 +400,12 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 	// Wait for timeout
 	time.Sleep(500 * time.Millisecond)
 
-	// Check for failure in FSM
+	// Check for failure in SyncMapFSM
 	time.Sleep(100 * time.Millisecond)
 
 	val, ok := h.fsm.Tasks.Load(task.ID)
 	if !ok {
-		t.Fatal("Task not in FSM")
+		t.Fatal("Task not in SyncMapFSM")
 	}
 	failedTask := val.(*core.Task)
 	if failedTask.Status != core.TaskStatusFailed {
@@ -458,7 +459,7 @@ func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	// Should remain in Proposal
 	val, ok := h.fsm.Tasks.Load(task.ID)
 	if !ok {
-		t.Fatal("Task not in FSM")
+		t.Fatal("Task not in SyncMapFSM")
 	}
 	tStat := val.(*core.Task)
 	if tStat.Status != core.TaskStatusProposal {
@@ -468,7 +469,7 @@ func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 
 func TestNewEngine(t *testing.T) {
 	// Need a dummy node
-	fsm := raftInternal.NewFSM("n1")
+	fsm := fsm2.NewSyncMapFSM("n1")
 	cfg := &raftInternal.Config{ID: "n1"}
 	node := &raftInternal.AgentNode{
 		FSM:    fsm,
@@ -482,7 +483,7 @@ func TestNewEngine(t *testing.T) {
 		t.Fatal("NewEngine returned nil")
 	}
 	if eng.fsm != fsm {
-		t.Error("FSM not set correctly")
+		t.Error("SyncMapFSM not set correctly")
 	}
 }
 
@@ -493,9 +494,9 @@ func TestEngine_Start(t *testing.T) {
 	// 1. TaskAdmitted -> Answer
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
 	h.fsm.Tasks.Store("t1", task)
-	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventTaskAdmitted, Data: task}
+	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventTaskAdmitted, Data: task}
 
-	// Wait for Answer in FSM
+	// Wait for Answer in SyncMapFSM
 	time.Sleep(100 * time.Millisecond)
 	if _, ok := h.fsm.TaskAnswers.Load(task.ID); !ok {
 		// Actually, runBrainstormPhase applies Answer command.
@@ -513,7 +514,7 @@ func TestEngine_Start(t *testing.T) {
 		{TaskID: "t1", Content: "ans2", AgentID: "node2"},
 		{TaskID: "t1", Content: "ans3", AgentID: "node3"},
 	})
-	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventAnswerSubmitted, Data: ans}
+	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventAnswerSubmitted, Data: ans}
 
 	time.Sleep(100 * time.Millisecond)
 	// Expect Proposal
@@ -525,10 +526,10 @@ func TestEngine_Start(t *testing.T) {
 
 	// 3. TaskUpdated (Proposal) -> Vote
 	taskProp := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Result: "ans"}
-	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventTaskUpdated, Data: taskProp}
+	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventTaskUpdated, Data: taskProp}
 
 	time.Sleep(100 * time.Millisecond)
-	// Expect Vote in FSM
+	// Expect Vote in SyncMapFSM
 	// (Assumes Apply worked)
 
 	// 4. VoteSubmitted -> Finalize
@@ -539,10 +540,10 @@ func TestEngine_Start(t *testing.T) {
 		{AgentID: "node2", Accepted: true},
 		{AgentID: "node3", Accepted: false},
 	})
-	// Need to ensure task is in FSM as Proposal
+	// Need to ensure task is in SyncMapFSM as Proposal
 	h.fsm.Tasks.Store("t1", taskProp)
 
-	h.fsm.EventCh <- raftInternal.Event{Type: raftInternal.EventVoteSubmitted, Data: vote}
+	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventVoteSubmitted, Data: vote}
 
 	time.Sleep(100 * time.Millisecond)
 	// Verify Task Status Done

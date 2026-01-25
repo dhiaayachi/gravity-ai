@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/hashicorp/raft"
 	raftwal "github.com/hashicorp/raft-wal"
 	"go.uber.org/zap"
@@ -11,7 +12,7 @@ import (
 
 type AgentNode struct {
 	Raft      *raft.Raft
-	FSM       *FSM
+	FSM       *fsm.SyncMapFSM
 	Transport *ReputationTransport
 	Config    *Config
 	// Keep stores to close them
@@ -31,8 +32,8 @@ type Config struct {
 func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*AgentNode, error) {
 	nodeLogger := logger.With(zap.String("component", "raft"), zap.String("agent_id", cfg.ID))
 
-	// Setup FSM
-	fsm := NewFSM(cfg.ID)
+	// Setup SyncMapFSM
+	fsm := fsm.NewSyncMapFSM(cfg.ID)
 
 	// Setup Config
 	raftConfig := raft.DefaultConfig()

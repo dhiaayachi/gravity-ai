@@ -12,6 +12,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/health"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
@@ -19,11 +20,12 @@ import (
 type TaskNotifier interface {
 	NotifyTaskCompletion(task *core.Task)
 }
+
 type Engine struct {
 	Node *raftInternal.AgentNode // Public for E2E tests
 
 	// Decoupled dependencies
-	fsm        *raftInternal.FSM
+	fsm        fsm.FSM
 	health     *health.Monitor
 	llm        llm.Client
 	nodeConfig *raftInternal.Config // For ID
@@ -106,7 +108,7 @@ func (e *Engine) Start() {
 	go func() {
 		for {
 			select {
-			case event := <-e.fsm.EventCh:
+			case event := <-e.fsm.EventsConsumer():
 				e.handleRaftEvent(event)
 			case taskID := <-e.timerCh:
 				e.handleTaskTimeout(taskID)
@@ -115,23 +117,24 @@ func (e *Engine) Start() {
 	}()
 }
 
-func (e *Engine) handleRaftEvent(event raftInternal.Event) {
+func (e *Engine) handleRaftEvent(event fsm.Event) {
 	e.logger.Debug("Handling Raft Event", zap.String("type", string(event.Type)))
 	switch event.Type {
-	case raftInternal.EventTaskAdmitted:
+	case fsm.EventTaskAdmitted:
 		task := event.Data.(*core.Task)
 		e.handleTaskAdmitted(task)
-	case raftInternal.EventAnswerSubmitted:
+	case fsm.EventAnswerSubmitted:
 		// If leader, check if we can move to Proposal
 		if e.clusterState.IsLeader() {
 			ans := event.Data.(*core.Answer)
 			// Get task for validation
-			if val, ok := e.fsm.Tasks.Load(ans.TaskID); ok {
-				task := val.(*core.Task)
-				e.runProposalPhase(task, false)
+			task, err := e.fsm.GetTask(ans.TaskID)
+			if err != nil {
+				break
 			}
+			e.runProposalPhase(task, false)
 		}
-	case raftInternal.EventTaskUpdated:
+	case fsm.EventTaskUpdated:
 		task := event.Data.(*core.Task)
 		switch task.Status {
 		case core.TaskStatusDone, core.TaskStatusFailed:
@@ -140,13 +143,14 @@ func (e *Engine) handleRaftEvent(event raftInternal.Event) {
 			// All nodes vote
 			e.runVotePhase(task)
 		}
-	case raftInternal.EventVoteSubmitted:
+	case fsm.EventVoteSubmitted:
 		if e.clusterState.IsLeader() {
 			vote := event.Data.(*core.Vote)
-			if val, ok := e.fsm.Tasks.Load(vote.TaskID); ok {
-				task := val.(*core.Task)
-				e.runFinalizeTask(task)
+			task, err := e.fsm.GetTask(vote.TaskID)
+			if err != nil {
+				break
 			}
+			e.runFinalizeTask(task)
 		}
 	}
 }
@@ -168,20 +172,21 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 	e.timers.Delete(taskID)
 
 	// Check task status
-	var task *core.Task
-	if val, ok := e.fsm.Tasks.Load(taskID); ok {
-		task = val.(*core.Task)
-	} else {
-		return // Task not found
+	task, err := e.fsm.GetTask(taskID)
+	if err != nil {
+		// Task not found
+		e.logger.Warn("Failed to get task", zap.String("task_id", taskID), zap.Error(err))
+		return
 	}
 
 	if task.Status == core.TaskStatusAdmitted {
 		// Proposal Timeout
 		if e.clusterState.IsLeader() {
+
 			// Check if we have enough answers to force proposal
-			var answers []core.Answer
-			if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
-				answers = val.([]core.Answer)
+			answers, err := e.fsm.GetTaskAnswers(task.ID)
+			if err != nil {
+				e.logger.Warn("Failed to get task answers", zap.String("task_id", taskID), zap.Error(err))
 			}
 
 			serverCount, err := e.clusterState.GetServerCount()
@@ -213,8 +218,8 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 	}
 
 	propBytes, _ := json.Marshal(failedTask)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeUpdateTask,
+	cmd := fsm.LogCommand{
+		Type:  fsm.CommandTypeUpdateTask,
 		Value: propBytes,
 	}
 	b, _ := json.Marshal(cmd)
@@ -262,10 +267,11 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 		return
 	}
 
-	// Retrieve answers (Reading from FSM state locally since we are leader)
-	var answers []core.Answer
-	if val, ok := e.fsm.TaskAnswers.Load(task.ID); ok {
-		answers = val.([]core.Answer)
+	// Retrieve answers (Reading from SyncMapFSM state locally since we are leader)
+	answers, err := e.fsm.GetTaskAnswers(task.ID)
+	if err != nil {
+		// Task not found
+		e.logger.Error("Failed to get answers", zap.Error(err), zap.String("task_id", task.ID))
 	}
 
 	// 1. Check Participation
@@ -315,8 +321,8 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	task.Result = proposalContent
 
 	taskBytes, _ := json.Marshal(task)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeUpdateTask,
+	cmd := fsm.LogCommand{
+		Type:  fsm.CommandTypeUpdateTask,
 		Value: taskBytes,
 	}
 	b, _ := json.Marshal(cmd)
@@ -347,8 +353,8 @@ func (e *Engine) runVotePhase(task *core.Task) {
 		}
 
 		voteBytes, _ := json.Marshal(vote)
-		cmd := raftInternal.LogCommand{
-			Type:  raftInternal.CommandTypeSubmitVote,
+		cmd := fsm.LogCommand{
+			Type:  fsm.CommandTypeSubmitVote,
 			Value: voteBytes,
 		}
 		b, _ := json.Marshal(cmd)
@@ -394,17 +400,20 @@ func (e *Engine) runVotePhase(task *core.Task) {
 
 func (e *Engine) runFinalizeTask(task *core.Task) {
 	// Guard: Check if task is already final (Done or Failed)
-	// We re-check FSM status because task variable might be old
-	if val, ok := e.fsm.Tasks.Load(task.ID); ok {
-		currentTask := val.(*core.Task)
-		if currentTask.Status == core.TaskStatusDone || currentTask.Status == core.TaskStatusFailed {
-			return
-		}
+	// We re-check SyncMapFSM status because task variable might be old
+	currentTask, err := e.fsm.GetTask(task.ID)
+	if err != nil {
+		e.logger.Error("Failed to get task", zap.Error(err), zap.String("task_id", task.ID))
+		return
+	}
+	if currentTask.Status == core.TaskStatusDone || currentTask.Status == core.TaskStatusFailed {
+		return
 	}
 
-	var votes []core.Vote
-	if val, ok := e.fsm.TaskVotes.Load(task.ID); ok {
-		votes = val.([]core.Vote)
+	votes, err := e.fsm.GetTaskVotes(task.ID)
+	if err != nil {
+		e.logger.Error("Failed to get task votes", zap.Error(err), zap.String("task_id", task.ID))
+		return
 	}
 
 	// Calculate Quorum
@@ -450,8 +459,8 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 	finalTask.Status = finalStatus
 
 	taskBytes, _ := json.Marshal(finalTask)
-	cmd := raftInternal.LogCommand{
-		Type:  raftInternal.CommandTypeUpdateTask,
+	cmd := fsm.LogCommand{
+		Type:  fsm.CommandTypeUpdateTask,
 		Value: taskBytes,
 	}
 	b, _ := json.Marshal(cmd)

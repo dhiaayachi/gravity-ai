@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
-	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
+	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/google/uuid"
 	"github.com/hashicorp/raft"
 )

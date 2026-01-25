@@ -3,19 +3,20 @@ package raft
 import (
 	"log"
 
+	fsm2 "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/hashicorp/raft"
 )
 
 // ReputationTransport wraps a raft.Transport to enforce reputation-based voting
 type ReputationTransport struct {
 	raft.Transport
-	fsm     *FSM
+	fsm     *fsm2.SyncMapFSM
 	localID string
 	ch      chan raft.RPC
 }
 
 // NewReputationTransport creates a new ReputationTransport
-func NewReputationTransport(base raft.Transport, fsm *FSM, localID string) *ReputationTransport {
+func NewReputationTransport(base raft.Transport, fsm *fsm2.SyncMapFSM, localID string) *ReputationTransport {
 	t := &ReputationTransport{
 		Transport: base,
 		fsm:       fsm,

@@ -1,4 +1,4 @@
-package raft
+package fsm
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestFSM_Apply(t *testing.T) {
-	fsm := NewFSM("node1")
+	fsm := NewSyncMapFSM("node1")
 
 	// Test Admit Task
 	task := core.Task{
@@ -28,7 +28,7 @@ func TestFSM_Apply(t *testing.T) {
 	fsm.Apply(&raft.Log{Data: cmdBytes})
 
 	if val, ok := fsm.Tasks.Load("task1"); !ok {
-		t.Errorf("Task not found in FSM")
+		t.Errorf("Task not found in SyncMapFSM")
 	} else {
 		storedTask := val.(*core.Task)
 		if storedTask.Content != "Do something" {
@@ -146,7 +146,7 @@ func TestFSM_Apply(t *testing.T) {
 }
 
 func TestFSM_SnapshotRestore(t *testing.T) {
-	fsm := NewFSM("node1")
+	fsm := NewSyncMapFSM("node1")
 
 	// Setup initial state
 	fsm.Reputations.Store("agentA", 50)
@@ -170,7 +170,7 @@ func TestFSM_SnapshotRestore(t *testing.T) {
 }
 
 func TestFSM_Restore(t *testing.T) {
-	fsm := NewFSM("node1")
+	fsm := NewSyncMapFSM("node1")
 
 	jsonState := `{"reputations": {"agentA": 10}, "tasks": {"task1": {"id": "task1", "status": "done"}}}`
 
@@ -221,7 +221,7 @@ func (s *dummySink) Close() error {
 }
 
 func TestFSM_Persist(t *testing.T) {
-	fsm := NewFSM("node1")
+	fsm := NewSyncMapFSM("node1")
 	fsm.Reputations.Store("agentA", 50)
 
 	snap, _ := fsm.Snapshot()
