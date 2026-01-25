@@ -14,7 +14,7 @@ type Client struct {
 	// No longer need fixed peerPort as we use leaderAddr directly
 }
 
-func NewClient(peerPort int) *Client {
+func NewClient() *Client {
 	return &Client{}
 }
 
@@ -22,7 +22,6 @@ func NewClient(peerPort int) *Client {
 var _ engine.ClusterClient = (*Client)(nil)
 
 func (c *Client) SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error {
-	// With cmux, the Raft address IS the gRPC address.
 	target := leaderAddr
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -49,7 +48,6 @@ func (c *Client) SubmitVote(ctx context.Context, leaderAddr string, taskID, agen
 }
 
 func (c *Client) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, content string) error {
-	// With cmux, the Raft address IS the gRPC address.
 	target := leaderAddr
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))

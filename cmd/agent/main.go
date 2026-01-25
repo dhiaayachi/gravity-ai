@@ -137,7 +137,7 @@ func main() {
 
 	healthMonitor := health.NewMonitor(llmClient)
 	// We pass 0 as port or remove port dependency in client next
-	clusterClient := agentGrpc.NewClient(0)
+	clusterClient := agentGrpc.NewClient()
 
 	tasksMgr := tasks_manager.TasksManager{}
 	eng := engine.NewEngine(node, healthMonitor, llmClient, clusterClient, &tasksMgr, appLogger)

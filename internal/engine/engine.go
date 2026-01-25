@@ -26,7 +26,6 @@ type Engine struct {
 
 	// Decoupled dependencies
 	fsm        fsm.FSM
-	health     *health.Monitor
 	llm        llm.Client
 	nodeConfig *raftInternal.Config // For ID
 
@@ -90,7 +89,6 @@ func NewEngine(node *raftInternal.AgentNode, health *health.Monitor, llm llm.Cli
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
-		health:          health,
 		llm:             llm,
 		nodeConfig:      node.Config,
 		clusterState:    &defaultClusterState{Node: node},
@@ -393,7 +391,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := e.clusterClient.SubmitVote(ctx, leaderAddr, task.ID, string(e.nodeConfig.ID), isValid); err != nil {
+	if err := e.clusterClient.SubmitVote(ctx, leaderAddr, task.ID, e.nodeConfig.ID, isValid); err != nil {
 		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
 }
