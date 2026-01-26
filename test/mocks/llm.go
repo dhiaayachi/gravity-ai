@@ -29,13 +29,6 @@ func (m *MockLLM) Validate(taskContent string, proposal string) (bool, error) {
 	return true, nil
 }
 
-func (m *MockLLM) HealthCheck() error {
-	if !m.Healthy {
-		return errors.New("connection failed")
-	}
-	return nil
-}
-
 func (m *MockLLM) Aggregate(_ string, _ []string) (string, error) {
 	if !m.Healthy {
 		return "", errors.New("llm unhealthy")

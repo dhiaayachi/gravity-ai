@@ -116,7 +116,7 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) handleRaftEvent(event fsm.Event) {
-	e.logger.Debug("Handling Raft Event", zap.String("type", string(event.Type)))
+	e.logger.Info("Handling Raft Event", zap.String("type", string(event.Type)))
 	switch event.Type {
 	case fsm.EventTaskAdmitted:
 		task := event.Data.(*core.Task)
@@ -128,6 +128,7 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 			// Get task for validation
 			task, err := e.fsm.GetTask(ans.TaskID)
 			if err != nil {
+				e.logger.Warn("Failed to get task", zap.String("taskID", ans.TaskID), zap.Error(err))
 				break
 			}
 			e.runProposalPhase(task, false)
@@ -146,6 +147,7 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 			vote := event.Data.(*core.Vote)
 			task, err := e.fsm.GetTask(vote.TaskID)
 			if err != nil {
+				e.logger.Warn("Failed to get vote", zap.String("task", task.ID), zap.Error(err))
 				break
 			}
 			e.runFinalizeTask(task)
@@ -405,6 +407,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 		return
 	}
 	if currentTask.Status == core.TaskStatusDone || currentTask.Status == core.TaskStatusFailed {
+		e.logger.Info("Task already finished", zap.String("task_id", task.ID))
 		return
 	}
 
@@ -421,6 +424,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 		return
 	}
 	if serverCount == 0 {
+		e.logger.Info("No raft configuration found", zap.String("task_id", task.ID))
 		return
 	}
 
@@ -448,6 +452,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 		finalStatus = core.TaskStatusFailed
 		// TODO: Decrement leader reputation & trigger election
 	} else {
+		e.logger.Info("No consensus reached, yet", zap.String("task_id", task.ID), zap.String("result", task.Result), zap.Int("quorum", quorum), zap.Int("rejected", rejected), zap.Int("accepted", accepted))
 		// No consensus yet
 		return
 	}

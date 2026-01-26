@@ -14,37 +14,44 @@ import (
 // SyncMapFSM is the state machine for the Raft system
 type SyncMapFSM struct {
 	NodeID      string
-	Reputations sync.Map // AgentID -> int
-	Tasks       sync.Map // TaskID -> *core.Task
-	TaskAnswers sync.Map // TaskID -> []core.Answer
-	TaskVotes   sync.Map // TaskID -> []core.Vote
+	Reputations sync.Map                        // AgentID -> int
+	Tasks       map[string]*core.Task           // TaskID -> *core.Task
+	TaskAnswers map[string][]core.Answer        // TaskID -> []core.Answer
+	TaskVotes   map[string]map[string]core.Vote // TaskID -> []core.Vote
 
+	mutex sync.RWMutex
 	// Events channel to notify Engine of state changes
 	EventCh chan Event
 }
 
 func (f *SyncMapFSM) GetTaskAnswers(id string) ([]core.Answer, error) {
-	val, ok := f.TaskAnswers.Load(id)
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+	val, ok := f.TaskAnswers[id]
 	if !ok {
 		return nil, fmt.Errorf("task Answers not found: %s", id)
 	}
-	return val.([]core.Answer), nil
+	return val, nil
 }
 
-func (f *SyncMapFSM) GetTaskVotes(id string) ([]core.Vote, error) {
-	val, ok := f.TaskVotes.Load(id)
+func (f *SyncMapFSM) GetTaskVotes(id string) (map[string]core.Vote, error) {
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+	val, ok := f.TaskVotes[id]
 	if !ok {
-		return nil, fmt.Errorf("task Votes not found: %s", id)
+		return nil, fmt.Errorf("task Answers not found: %s", id)
 	}
-	return val.([]core.Vote), nil
+	return val, nil
 }
 
 func (f *SyncMapFSM) GetTask(id string) (*core.Task, error) {
-	val, ok := f.Tasks.Load(id)
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+	val, ok := f.Tasks[id]
 	if !ok {
-		return nil, fmt.Errorf("task not found: %s", id)
+		return nil, fmt.Errorf("task Answers not found: %s", id)
 	}
-	return val.(*core.Task), nil
+	return val, nil
 }
 
 func (f *SyncMapFSM) EventsConsumer() chan Event {
@@ -67,8 +74,11 @@ type Event struct {
 
 func NewSyncMapFSM(nodeID string) *SyncMapFSM {
 	return &SyncMapFSM{
-		NodeID:  nodeID,
-		EventCh: make(chan Event, 100),
+		NodeID:      nodeID,
+		EventCh:     make(chan Event, 100),
+		Tasks:       make(map[string]*core.Task),
+		TaskAnswers: make(map[string][]core.Answer),
+		TaskVotes:   make(map[string]map[string]core.Vote),
 	}
 }
 
@@ -79,6 +89,8 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		return fmt.Errorf("failed to unmarshal log data: %w", err)
 	}
 
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	switch cmd.Type {
 	case CommandTypeUpdateReputation:
 		var rep int
@@ -91,7 +103,7 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		if err := json.Unmarshal(cmd.Value, &task); err != nil {
 			return fmt.Errorf("failed to unmarshal task: %w", err)
 		}
-		f.Tasks.Store(task.ID, &task)
+		f.Tasks[task.ID] = &task
 		log.Printf("[%s] Task admitted: %s", f.NodeID, task.ID)
 
 		// Notify
@@ -106,10 +118,9 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		if err := json.Unmarshal(cmd.Value, &answer); err != nil {
 			return fmt.Errorf("failed to unmarshal answer: %w", err)
 		}
-		val, _ := f.TaskAnswers.LoadOrStore(answer.TaskID, []core.Answer{})
-		answers := val.([]core.Answer)
+		answers, _ := f.TaskAnswers[answer.TaskID]
 		answers = append(answers, answer)
-		f.TaskAnswers.Store(answer.TaskID, answers)
+		f.TaskAnswers[answer.TaskID] = answers
 
 		// Notify
 		select {
@@ -123,8 +134,7 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			return fmt.Errorf("failed to unmarshal task: %w", err)
 		}
 		// Update existing task (e.g. status change, result added)
-		if val, ok := f.Tasks.Load(task.ID); ok {
-			existing := val.(*core.Task)
+		if existing, ok := f.Tasks[task.ID]; ok {
 			existing.Status = task.Status
 			existing.Result = task.Result
 
@@ -139,28 +149,18 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		if err := json.Unmarshal(cmd.Value, &vote); err != nil {
 			return fmt.Errorf("failed to unmarshal vote: %w", err)
 		}
-		val, _ := f.TaskVotes.LoadOrStore(vote.TaskID, []core.Vote{})
-		votes := val.([]core.Vote)
-
-		// Dedup
-		found := false
-		for i, v := range votes {
-			if v.AgentID == vote.AgentID {
-				votes[i] = vote
-				found = true
-				break
+		votes, ok := f.TaskVotes[vote.TaskID]
+		if !ok {
+			f.TaskVotes[vote.TaskID] = make(map[string]core.Vote)
+			votes = f.TaskVotes[vote.TaskID]
+		}
+		if _, ok := votes[vote.AgentID]; !ok {
+			votes[vote.AgentID] = vote
+			// Notify
+			select {
+			case f.EventCh <- Event{Type: EventVoteSubmitted, Data: &vote}:
+			default:
 			}
-		}
-		if !found {
-			votes = append(votes, vote)
-		}
-
-		f.TaskVotes.Store(vote.TaskID, votes)
-
-		// Notify
-		select {
-		case f.EventCh <- Event{Type: EventVoteSubmitted, Data: &vote}:
-		default:
 		}
 	}
 	return nil
@@ -175,12 +175,7 @@ func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 		return true
 	})
 
-	tasks := make(map[string]*core.Task)
-	f.Tasks.Range(func(key, value interface{}) bool {
-		t := *value.(*core.Task)
-		tasks[key.(string)] = &t
-		return true
-	})
+	tasks := f.Tasks
 
 	// Copy answers/votes if needed, skipped for brevity in this step but should be here
 
@@ -206,18 +201,17 @@ func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
 		f.Reputations.Store(k, v)
 	}
 
-	f.Tasks = sync.Map{}
-	f.Tasks = sync.Map{}
+	f.Tasks = make(map[string]*core.Task)
 	for k, v := range snapshot.Tasks {
 		// Only restore active tasks
 		if v.Status != core.TaskStatusDone && v.Status != core.TaskStatusFailed {
-			f.Tasks.Store(k, v)
+			f.Tasks[k] = v
 		}
 	}
 
 	// Also need to handle TaskAnswers/Votes if we were persisting them
-	f.TaskAnswers = sync.Map{}
-	f.TaskVotes = sync.Map{}
+	f.TaskAnswers = make(map[string][]core.Answer)
+	f.TaskVotes = make(map[string]map[string]core.Vote)
 
 	return nil
 }

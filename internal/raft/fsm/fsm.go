@@ -11,7 +11,7 @@ type FSM interface {
 	EventsConsumer() chan Event
 	GetTask(id string) (*core.Task, error)
 	GetTaskAnswers(id string) ([]core.Answer, error)
-	GetTaskVotes(id string) ([]core.Vote, error)
+	GetTaskVotes(id string) (map[string]core.Vote, error)
 }
 
 // Helper types for Logs and Snapshots

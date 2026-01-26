@@ -112,22 +112,3 @@ func (c *ClaudeClient) Aggregate(taskContent string, answers []string) (string, 
 	prompt += "\nAggregate these answers into a single, high-quality response."
 	return c.Generate(prompt)
 }
-
-func (c *ClaudeClient) HealthCheck() error {
-	_, err := c.client.CreateMessages(
-		context.Background(),
-		anthropic.MessagesRequest{
-			Model: anthropic.Model(c.model),
-			Messages: []anthropic.Message{
-				{
-					Role: anthropic.RoleUser,
-					Content: []anthropic.MessageContent{
-						anthropic.NewTextMessageContent("Hello"), // Minimal prompt
-					},
-				},
-			},
-			MaxTokens: 1, // Minimize cost
-		},
-	)
-	return err
-}

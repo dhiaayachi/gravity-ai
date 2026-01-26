@@ -103,10 +103,3 @@ func (c *OllamaClient) Aggregate(taskContent string, answers []string) (string, 
 	prompt += "\nAggregate these answers into a single, high-quality response."
 	return c.Generate(prompt)
 }
-
-func (c *OllamaClient) HealthCheck() error {
-	ctx := context.Background()
-	// Simply list models
-	_, err := c.client.List(ctx)
-	return err
-}

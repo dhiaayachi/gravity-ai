@@ -27,10 +27,10 @@ func TestFSM_Apply(t *testing.T) {
 
 	fsm.Apply(&raft.Log{Data: cmdBytes})
 
-	if val, ok := fsm.Tasks.Load("task1"); !ok {
+	if val, ok := fsm.Tasks["task1"]; !ok {
 		t.Errorf("Task not found in SyncMapFSM")
 	} else {
-		storedTask := val.(*core.Task)
+		storedTask := val
 		if storedTask.Content != "Do something" {
 			t.Errorf("Task content mismatch")
 		}
@@ -73,10 +73,10 @@ func TestFSM_Apply(t *testing.T) {
 	ansCmdBytes, _ := json.Marshal(ansCmd)
 	fsm.Apply(&raft.Log{Data: ansCmdBytes})
 
-	if val, ok := fsm.TaskAnswers.Load("task1"); !ok {
+	if val, ok := fsm.TaskAnswers["task1"]; !ok {
 		t.Errorf("Answers not found")
 	} else {
-		answers := val.([]core.Answer)
+		answers := val
 		if len(answers) != 1 || answers[0].Content != "Here is the answer" {
 			t.Errorf("Answer content mismatch")
 		}
@@ -112,11 +112,11 @@ func TestFSM_Apply(t *testing.T) {
 	voteCmdBytes, _ := json.Marshal(voteCmd)
 	fsm.Apply(&raft.Log{Data: voteCmdBytes})
 
-	if val, ok := fsm.TaskVotes.Load("task1"); !ok {
+	if val, ok := fsm.TaskVotes["task1"]; !ok {
 		t.Errorf("Votes not found")
 	} else {
-		votes := val.([]core.Vote)
-		if len(votes) != 1 || !votes[0].Accepted {
+		votes := val
+		if len(votes) != 1 || !votes["agentA"].Accepted {
 			t.Errorf("Vote content mismatch")
 		}
 	}
@@ -135,11 +135,11 @@ func TestFSM_Apply(t *testing.T) {
 	voteCmd2Bytes, _ := json.Marshal(voteCmd2)
 	fsm.Apply(&raft.Log{Data: voteCmd2Bytes})
 
-	if val, ok := fsm.TaskVotes.Load("task1"); !ok {
+	if val, ok := fsm.TaskVotes["task1"]; !ok {
 		t.Errorf("Votes not found after update")
 	} else {
-		votes := val.([]core.Vote)
-		if len(votes) != 1 || votes[0].Accepted { // Should be false now
+		votes := val
+		if len(votes) != 1 || !votes["agentA"].Accepted { // Should be false now
 			t.Errorf("Vote not updated correctly")
 		}
 	}
@@ -151,7 +151,7 @@ func TestFSM_SnapshotRestore(t *testing.T) {
 	// Setup initial state
 	fsm.Reputations.Store("agentA", 50)
 	task := core.Task{ID: "task1", Status: core.TaskStatusAdmitted}
-	fsm.Tasks.Store("task1", &task)
+	fsm.Tasks["task1"] = &task
 
 	// Create snapshot
 	snap, err := fsm.Snapshot()
@@ -190,7 +190,7 @@ func TestFSM_Restore(t *testing.T) {
 		t.Errorf("Reputation restore failed, got %v", val)
 	}
 
-	if _, ok := fsm.Tasks.Load("task1"); ok {
+	if _, ok := fsm.Tasks["task1"]; ok {
 		t.Errorf("Task task1 should not have been restored (it was done)")
 	}
 }

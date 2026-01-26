@@ -79,10 +79,6 @@ func (m *mockLLM) Aggregate(_ string, _ []string) (string, error) {
 	return "Aggregated: " + m.genResp, nil
 }
 
-func (m *mockLLM) HealthCheck() error {
-	return nil
-}
-
 type mockClusterClient struct {
 	mu           sync.Mutex
 	voted        bool
@@ -228,7 +224,7 @@ func TestFlow_TaskAdmitted_Brainstorm(t *testing.T) {
 	h.cluster.isLeader = false // Follower also participates
 
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 
 	// Inject event
 	h.engine.handleTaskAdmitted(task)
@@ -250,14 +246,14 @@ func TestFlow_TaskAdmitted_Brainstorm(t *testing.T) {
 func TestFlow_Leader_Proposal(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 
 	// Add answer to SyncMapFSM (Need 2 for quorum of 3)
-	h.fsm.TaskAnswers.Store("t1", []core.Answer{
+	h.fsm.TaskAnswers["t1"] = []core.Answer{
 		{TaskID: "t1", Content: "ans1"},
 		{TaskID: "t1", Content: "ans2"},
 		{TaskID: "t1", Content: "ans3"},
-	})
+	}
 
 	// Trigger event (simulation of Engine.Start loop logic)
 	// We call the handler method directly if we extract it, or simulate logic.
@@ -268,11 +264,11 @@ func TestFlow_Leader_Proposal(t *testing.T) {
 	// Verify Task Status Updated to Proposal
 	time.Sleep(100 * time.Millisecond)
 
-	val, ok := h.fsm.Tasks.Load(task.ID)
+	val, ok := h.fsm.Tasks[task.ID]
 	if !ok {
 		t.Fatal("Task not in SyncMapFSM")
 	}
-	taskUpd := val.(*core.Task)
+	taskUpd := val
 	if taskUpd.Status != core.TaskStatusProposal {
 		t.Errorf("Expected Proposal status, got %v", taskUpd.Status)
 	}
@@ -328,10 +324,10 @@ func TestFlow_Vote(t *testing.T) {
 	// We check internal raft logic or assume log applied if no error.
 	// SyncMapFSM usually updates TaskVotes?
 	// Let's assume yes for now.
-	if _, ok := h.fsm.TaskVotes.Load(task.ID); !ok {
+	if _, ok := h.fsm.TaskVotes[task.ID]; !ok {
 		// Wait more
 		time.Sleep(100 * time.Millisecond)
-		if _, ok := h.fsm.TaskVotes.Load(task.ID); !ok {
+		if _, ok := h.fsm.TaskVotes[task.ID]; !ok {
 			t.Error("No votes found in SyncMapFSM")
 		}
 	}
@@ -340,26 +336,26 @@ func TestFlow_Vote(t *testing.T) {
 func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
-	h.fsm.Tasks.Store("t1", task) // Must match in SyncMapFSM
+	h.fsm.Tasks["t1"] = task // Must match in SyncMapFSM
 
 	// Stores votes: 2/3 accepted
-	votes := []core.Vote{
-		{AgentID: "1", Accepted: true},
-		{AgentID: "2", Accepted: true},
-		{AgentID: "3", Accepted: false},
+	votes := map[string]core.Vote{
+		"1": {AgentID: "1", Accepted: true},
+		"2": {AgentID: "2", Accepted: true},
+		"3": {AgentID: "3", Accepted: false},
 	}
-	h.fsm.TaskVotes.Store("t1", votes)
+	h.fsm.TaskVotes["t1"] = votes
 
 	h.engine.runFinalizeTask(task)
 
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify Task Status Done
-	val, ok := h.fsm.Tasks.Load(task.ID)
+	val, ok := h.fsm.Tasks[task.ID]
 	if !ok {
 		t.Fatal("Task not in SyncMapFSM")
 	}
-	finalTask := val.(*core.Task)
+	finalTask := val
 	if finalTask.Status != core.TaskStatusDone {
 		t.Errorf("Expected Done status, got %v", finalTask.Status)
 	}
@@ -368,25 +364,25 @@ func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 
-	votes := []core.Vote{
-		{AgentID: "1", Accepted: false},
-		{AgentID: "2", Accepted: false},
-		{AgentID: "3", Accepted: true},
+	votes := map[string]core.Vote{
+		"1": {AgentID: "1", Accepted: false},
+		"2": {AgentID: "2", Accepted: false},
+		"3": {AgentID: "3", Accepted: true},
 	}
-	h.fsm.TaskVotes.Store("t1", votes)
+	h.fsm.TaskVotes["t1"] = votes
 
 	h.engine.runFinalizeTask(task)
 
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify Task Status Failed
-	val, ok := h.fsm.Tasks.Load(task.ID)
+	val, ok := h.fsm.Tasks[task.ID]
 	if !ok {
 		t.Fatal("Task not in SyncMapFSM")
 	}
-	finalTask := val.(*core.Task)
+	finalTask := val
 	if finalTask.Status != core.TaskStatusFailed {
 		t.Errorf("Expected Failed status, got %v", finalTask.Status)
 	}
@@ -398,7 +394,7 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 	h.engine.ProposalTimeout = 100 * time.Millisecond
 
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 
 	// Simulate Admitted event which starts timer
 	h.engine.handleTaskAdmitted(task)
@@ -409,11 +405,11 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 	// Check for failure in SyncMapFSM
 	time.Sleep(100 * time.Millisecond)
 
-	val, ok := h.fsm.Tasks.Load(task.ID)
+	val, ok := h.fsm.Tasks[task.ID]
 	if !ok {
 		t.Fatal("Task not in SyncMapFSM")
 	}
-	failedTask := val.(*core.Task)
+	failedTask := val
 	if failedTask.Status != core.TaskStatusFailed {
 		t.Errorf("Expected Failed status, got %v", failedTask.Status)
 	}
@@ -423,13 +419,13 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 
 	// 1/3 voted so far
-	votes := []core.Vote{
-		{AgentID: "1", Accepted: true},
+	votes := map[string]core.Vote{
+		"1": {AgentID: "1", Accepted: true},
 	}
-	h.fsm.TaskVotes.Store("t1", votes)
+	h.fsm.TaskVotes["t1"] = votes
 
 	h.engine.runFinalizeTask(task)
 
@@ -463,11 +459,11 @@ func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	// verification:
 	time.Sleep(50 * time.Millisecond)
 	// Should remain in Proposal
-	val, ok := h.fsm.Tasks.Load(task.ID)
+	val, ok := h.fsm.Tasks[task.ID]
 	if !ok {
 		t.Fatal("Task not in SyncMapFSM")
 	}
-	tStat := val.(*core.Task)
+	tStat := val
 	if tStat.Status != core.TaskStatusProposal {
 		t.Errorf("Expected Proposal status (waiting), got %v", tStat.Status)
 	}
@@ -499,12 +495,12 @@ func TestEngine_Start(t *testing.T) {
 
 	// 1. TaskAdmitted -> Answer
 	task := &core.Task{ID: "t1", Content: "c1", Status: core.TaskStatusAdmitted}
-	h.fsm.Tasks.Store("t1", task)
+	h.fsm.Tasks["t1"] = task
 	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventTaskAdmitted, Data: task}
 
 	// Wait for Answer in SyncMapFSM
 	time.Sleep(100 * time.Millisecond)
-	if _, ok := h.fsm.TaskAnswers.Load(task.ID); !ok {
+	if _, ok := h.fsm.TaskAnswers[task.ID]; !ok {
 		// Actually, runBrainstormPhase applies Answer command.
 		// Wait longer?
 		t.Log("Waiting for answer...")
@@ -515,18 +511,18 @@ func TestEngine_Start(t *testing.T) {
 	// 2. AnswerSubmitted -> Proposal (as Leader)
 	ans := &core.Answer{TaskID: "t1", Content: "ans", AgentID: "node1"}
 	// Need 2 answers for quorum of 3
-	h.fsm.TaskAnswers.Store("t1", []core.Answer{
+	h.fsm.TaskAnswers["t1"] = []core.Answer{
 		*ans,
 		{TaskID: "t1", Content: "ans2", AgentID: "node2"},
 		{TaskID: "t1", Content: "ans3", AgentID: "node3"},
-	})
+	}
 	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventAnswerSubmitted, Data: ans}
 
 	time.Sleep(100 * time.Millisecond)
 	// Expect Proposal
-	if val, ok := h.fsm.Tasks.Load(task.ID); ok {
-		if val.(*core.Task).Status != core.TaskStatusProposal {
-			t.Logf("Expected Proposal status, got %v", val.(*core.Task).Status)
+	if val, ok := h.fsm.Tasks[task.ID]; ok {
+		if val.Status != core.TaskStatusProposal {
+			t.Logf("Expected Proposal status, got %v", val.Status)
 		}
 	}
 
@@ -541,20 +537,20 @@ func TestEngine_Start(t *testing.T) {
 	// 4. VoteSubmitted -> Finalize
 	vote := &core.Vote{TaskID: "t1", AgentID: "node2", Accepted: true}
 	// Setup consensus
-	h.fsm.TaskVotes.Store("t1", []core.Vote{
-		{AgentID: "node1", Accepted: true},
-		{AgentID: "node2", Accepted: true},
-		{AgentID: "node3", Accepted: false},
-	})
+	h.fsm.TaskVotes["t1"] = map[string]core.Vote{
+		"node1": {AgentID: "node1", Accepted: true},
+		"node2": {AgentID: "node2", Accepted: true},
+		"node3": {AgentID: "node3", Accepted: false},
+	}
 	// Need to ensure task is in SyncMapFSM as Proposal
-	h.fsm.Tasks.Store("t1", taskProp)
+	h.fsm.Tasks["t1"] = taskProp
 
 	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventVoteSubmitted, Data: vote}
 
 	time.Sleep(100 * time.Millisecond)
 	// Verify Task Status Done
-	if val, ok := h.fsm.Tasks.Load("t1"); ok {
-		if val.(*core.Task).Status != core.TaskStatusDone {
+	if val, ok := h.fsm.Tasks["t1"]; ok {
+		if val.Status != core.TaskStatusDone {
 			t.Errorf("Expected Done status")
 		}
 	} else {

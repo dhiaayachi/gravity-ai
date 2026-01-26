@@ -18,7 +18,7 @@ type Config struct {
 	HTTPAddr string `mapstructure:"http-addr"`
 
 	// Raft
-	ID        string `mapstructure:"id"`
+	ID        string `mapstructure:"agent-id"`
 	DataDir   string `mapstructure:"data-dir"`
 	Bootstrap bool   `mapstructure:"bootstrap"`
 	Peers     string `mapstructure:"peers"`
@@ -39,7 +39,7 @@ func LoadConfig(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 	v.SetDefault("log-level", "info")
 	v.SetDefault("bind-addr", "127.0.0.1:8000")
 	v.SetDefault("http-addr", ":8080")
-	v.SetDefault("id", "agent-1")
+	v.SetDefault("agent-id", "agent-1")
 	v.SetDefault("data-dir", "./data")
 	v.SetDefault("bootstrap", false)
 	v.SetDefault("llm-provider", "mock")

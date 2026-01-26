@@ -91,21 +91,6 @@ func (c *GeminiClient) Aggregate(taskContent string, answers []string) (string, 
 	return c.Generate(prompt)
 }
 
-func (c *GeminiClient) HealthCheck() error {
-	// Lightweight check: List models
-	// genai client doesn't expose ListModels directly on the main client struct easily in all versions,
-	// checking if we can create a model reference is a basic check, but ListModels is better if available.
-	// For this pkg, we'll try a very basic generation with 1 token if ListModels isn't obvious,
-	// but ListModels IS available via client.ListModels iterator.
-
-	iter := c.client.ListModels(context.Background())
-	_, err := iter.Next()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func parseGeminiResponse(resp *genai.GenerateContentResponse) (string, error) {
 	if len(resp.Candidates) == 0 {
 		return "", fmt.Errorf("no candidates returned")

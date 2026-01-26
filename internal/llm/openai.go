@@ -107,9 +107,3 @@ func (c *OpenAIClient) Aggregate(taskContent string, answers []string) (string, 
 	prompt += "\nAggregate these answers into a single, high-quality response."
 	return c.Generate(prompt)
 }
-
-func (c *OpenAIClient) HealthCheck() error {
-	// Lightweight check: List models
-	_, err := c.client.ListModels(context.Background())
-	return err
-}
