@@ -147,7 +147,7 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 			vote := event.Data.(*core.Vote)
 			task, err := e.fsm.GetTask(vote.TaskID)
 			if err != nil {
-				e.logger.Warn("Failed to get vote", zap.String("task", task.ID), zap.Error(err))
+				e.logger.Warn("Failed to get vote", zap.String("task", vote.TaskID), zap.Error(err))
 				break
 			}
 			e.runFinalizeTask(task)
