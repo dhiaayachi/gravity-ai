@@ -38,7 +38,7 @@ func main() {
 	// LLM Flags
 	pflag.String("llm-provider", "mock", "LLM Provider (mock, openai, gemini, claude, ollama)")
 	pflag.String("api-key", "", "API Key for llm providers")
-	pflag.String("model", "", "Model name (optional)")
+	pflag.String("llm-model", "", "Model name (optional)")
 	pflag.String("ollama-url", "http://localhost:11434", "Ollama URL")
 
 	// Config File Flag (not bound to config struct, just for loading)
@@ -93,11 +93,15 @@ func main() {
 	peers := make(map[string]string)
 	p := strings.Split(cfg.Peers, ",")
 	for _, v := range p {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
 		s := strings.Split(v, "=")
 		if len(s) != 2 {
 			appLogger.Fatal("Invalid peer address", zap.String("peer", v))
 		}
-		peers[s[0]] = s[1]
+		peers[strings.TrimSpace(s[0])] = strings.TrimSpace(s[1])
 	}
 	// Setup Raft Node
 	raftConfig := &raft.Config{

@@ -76,3 +76,31 @@ func (c *Client) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, ag
 	}
 	return nil
 }
+
+func (c *Client) UpdateMetadata(ctx context.Context, leaderAddr string, agentID, provider, model string) error {
+	target := leaderAddr
+
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to dial leader: %w", err)
+	}
+	defer func(conn *grpc.ClientConn) {
+		_ = conn.Close()
+	}(conn)
+
+	client := pb.NewGravityServiceClient(conn)
+	req := &pb.UpdateMetadataRequest{
+		AgentId:     agentID,
+		LlmProvider: provider,
+		LlmModel:    model,
+	}
+
+	resp, err := client.UpdateMetadata(ctx, req)
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("leader rejected metadata update: %s", resp.Message)
+	}
+	return nil
+}

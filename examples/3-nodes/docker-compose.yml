@@ -37,6 +37,7 @@ services:
       - GRAVITY_BOOTSTRAP=false
       - GRAVITY_PEERS=node1=node1:8000, node3=node3:8000
       - GRAVITY_LLM_PROVIDER=gemini
+      - GRAVITY_LLM_MODEL=gemini-flash-latest
       - GRAVITY_API_KEY=${GEMINI_API_KEY}
     volumes:
       - node2-data:/data

@@ -20,9 +20,6 @@ func NewGeminiClient(apiKey string, model string) (*GeminiClient, error) {
 	if apiKey == "" {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
-	if model == "" {
-		model = "gemini-flash-latest"
-	}
 
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {

@@ -124,6 +124,22 @@ func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb
 	return &pb.SubmitVoteResponse{Success: true}, nil
 }
 
+func (s *Server) UpdateMetadata(ctx context.Context, req *pb.UpdateMetadataRequest) (*pb.UpdateMetadataResponse, error) {
+	if response, err, forward := forwardToLeader(ctx, s, req,
+		func(client pb.GravityServiceClient, ctx context.Context, req *pb.UpdateMetadataRequest) (*pb.UpdateMetadataResponse, error) {
+			return client.UpdateMetadata(ctx, req)
+		}); forward {
+		return response, err
+	}
+
+	err := s.service.UpdateMetadata(ctx, req.AgentId, req.LlmProvider, req.LlmModel)
+	if err != nil {
+		return &pb.UpdateMetadataResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &pb.UpdateMetadataResponse{Success: true}, nil
+}
+
 func forwardToLeader[Req any, Res any](ctx context.Context, s *Server, req Req, method func(pb.GravityServiceClient, context.Context, Req) (*Res, error)) (*Res, error, bool) {
 	if s.node.Raft.State() != hashicorpRaft.Leader {
 		conn, err := s.getLeaderConn()

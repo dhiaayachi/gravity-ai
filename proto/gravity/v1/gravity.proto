@@ -8,6 +8,7 @@ service GravityService {
   rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
   rpc SubmitVote(SubmitVoteRequest) returns (SubmitVoteResponse);
   rpc SubmitAnswer(SubmitAnswerRequest) returns (SubmitAnswerResponse);
+  rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse);
 }
 
 message SubmitTaskRequest {
@@ -15,9 +16,7 @@ message SubmitTaskRequest {
   string requester = 2; // Optional, defaults to "api-user"
 }
 
-message SubmitTaskResponse {
-  string task_id = 1;
-}
+message SubmitTaskResponse { string task_id = 1; }
 
 message SubmitVoteRequest {
   string task_id = 1;
@@ -37,6 +36,17 @@ message SubmitAnswerRequest {
 }
 
 message SubmitAnswerResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UpdateMetadataRequest {
+  string agent_id = 1;
+  string llm_provider = 2;
+  string llm_model = 3;
+}
+
+message UpdateMetadataResponse {
   bool success = 1;
   string message = 2;
 }

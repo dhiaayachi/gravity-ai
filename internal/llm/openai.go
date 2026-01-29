@@ -18,9 +18,6 @@ func NewOpenAIClient(apiKey string, model string) *OpenAIClient {
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENAI_API_KEY")
 	}
-	if model == "" {
-		model = openai.GPT3Dot5Turbo
-	}
 	return &OpenAIClient{
 		client: openai.NewClient(apiKey),
 		model:  model,

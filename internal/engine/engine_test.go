@@ -111,6 +111,13 @@ func (m *mockClusterClient) SubmitAnswer(_ context.Context, _ string, taskID, ag
 	m.TaskID = taskID
 	m.AgentID = agentID
 	m.answer = answer
+	m.answer = answer
+	return nil
+}
+
+func (m *mockClusterClient) UpdateMetadata(_ context.Context, _ string, _, _, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return nil
 }
 

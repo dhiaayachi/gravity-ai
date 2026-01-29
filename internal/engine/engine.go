@@ -55,6 +55,7 @@ type Engine struct {
 type ClusterClient interface {
 	SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error
 	SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, content string) error
+	UpdateMetadata(ctx context.Context, leaderAddr string, agentID, provider, model string) error
 }
 
 // ClusterState defines the interface for querying cluster status
@@ -161,21 +162,35 @@ func (e *Engine) Start() {
 			LLMModel:    e.llmModel,
 		}
 
-		metaBytes, _ := json.Marshal(meta)
-		cmd := fsm.LogCommand{
-			Type:  fsm.CommandTypeUpdateMetadata,
-			Value: metaBytes,
-		}
-		b, _ := json.Marshal(cmd)
-
 		// Retry loop
 		for i := 0; i < 5; i++ {
-			f := e.Node.Raft.Apply(b, 5*time.Second)
-			if f.Error() == nil {
+			var err error
+			if e.clusterState.IsLeader() {
+				// Local Apply
+				metaBytes, _ := json.Marshal(meta)
+				cmd := fsm.LogCommand{
+					Type:  fsm.CommandTypeUpdateMetadata,
+					Value: metaBytes,
+				}
+				b, _ := json.Marshal(cmd)
+				if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+					err = f.Error()
+				}
+			} else {
+				// Forward to Leader
+				leaderAddr := e.clusterState.GetLeaderAddr()
+				if leaderAddr == "" {
+					err = fmt.Errorf("no leader")
+				} else {
+					err = e.clusterClient.UpdateMetadata(context.Background(), leaderAddr, meta.ID, meta.LLMProvider, meta.LLMModel)
+				}
+			}
+
+			if err == nil {
 				e.logger.Info("Published Metadata", zap.String("id", meta.ID))
 				break
 			}
-			e.logger.Warn("Failed to publish metadata, retrying...", zap.Error(f.Error()))
+			e.logger.Warn("Failed to publish metadata, retrying...", zap.Error(err))
 			time.Sleep(2 * time.Second)
 		}
 	}()

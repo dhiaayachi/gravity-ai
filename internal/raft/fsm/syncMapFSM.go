@@ -190,6 +190,13 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			default:
 			}
 		}
+
+	case CommandTypeUpdateMetadata:
+		var meta core.AgentMetadata
+		if err := json.Unmarshal(cmd.Value, &meta); err != nil {
+			return fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+		f.Metadata.Store(meta.ID, meta)
 	}
 	return nil
 }

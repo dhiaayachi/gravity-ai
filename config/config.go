@@ -26,7 +26,7 @@ type Config struct {
 	// LLM
 	LLMProvider string `mapstructure:"llm-provider"`
 	APIKey      string `mapstructure:"api-key"` // Watch out for secrets!
-	Model       string `mapstructure:"model"`
+	Model       string `mapstructure:"llm-model"`
 	OllamaURL   string `mapstructure:"ollama-url"`
 }
 

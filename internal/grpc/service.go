@@ -139,3 +139,30 @@ func (a *AgentService) SubmitVote(taskID, agentID string, accepted bool) error {
 	f := a.raft.Apply(b, 5*time.Second)
 	return f.Error()
 }
+
+// UpdateMetadata handles metadata update requests
+func (a *AgentService) UpdateMetadata(ctx context.Context, agentID, provider, model string) error {
+	meta := core.AgentMetadata{
+		ID:          agentID,
+		LLMProvider: provider,
+		LLMModel:    model,
+	}
+
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+
+	cmd := raftInternal.LogCommand{
+		Type:  raftInternal.CommandTypeUpdateMetadata,
+		Value: metaBytes,
+	}
+
+	b, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+
+	f := a.raft.Apply(b, 5*time.Second)
+	return f.Error()
+}

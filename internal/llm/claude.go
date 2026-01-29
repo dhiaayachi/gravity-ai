@@ -18,9 +18,7 @@ func NewClaudeClient(apiKey string, model string) *ClaudeClient {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
-	if model == "" {
-		model = "claude-3-opus-20240229"
-	}
+
 	return &ClaudeClient{
 		client: anthropic.NewClient(apiKey),
 		model:  model,

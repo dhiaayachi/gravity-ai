@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GravityService_SubmitTask_FullMethodName   = "/gravity.v1.GravityService/SubmitTask"
-	GravityService_SubmitVote_FullMethodName   = "/gravity.v1.GravityService/SubmitVote"
-	GravityService_SubmitAnswer_FullMethodName = "/gravity.v1.GravityService/SubmitAnswer"
+	GravityService_SubmitTask_FullMethodName     = "/gravity.v1.GravityService/SubmitTask"
+	GravityService_SubmitVote_FullMethodName     = "/gravity.v1.GravityService/SubmitVote"
+	GravityService_SubmitAnswer_FullMethodName   = "/gravity.v1.GravityService/SubmitAnswer"
+	GravityService_UpdateMetadata_FullMethodName = "/gravity.v1.GravityService/UpdateMetadata"
 )
 
 // GravityServiceClient is the client API for GravityService service.
@@ -31,6 +32,7 @@ type GravityServiceClient interface {
 	SubmitTask(ctx context.Context, in *SubmitTaskRequest, opts ...grpc.CallOption) (*SubmitTaskResponse, error)
 	SubmitVote(ctx context.Context, in *SubmitVoteRequest, opts ...grpc.CallOption) (*SubmitVoteResponse, error)
 	SubmitAnswer(ctx context.Context, in *SubmitAnswerRequest, opts ...grpc.CallOption) (*SubmitAnswerResponse, error)
+	UpdateMetadata(ctx context.Context, in *UpdateMetadataRequest, opts ...grpc.CallOption) (*UpdateMetadataResponse, error)
 }
 
 type gravityServiceClient struct {
@@ -71,6 +73,16 @@ func (c *gravityServiceClient) SubmitAnswer(ctx context.Context, in *SubmitAnswe
 	return out, nil
 }
 
+func (c *gravityServiceClient) UpdateMetadata(ctx context.Context, in *UpdateMetadataRequest, opts ...grpc.CallOption) (*UpdateMetadataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateMetadataResponse)
+	err := c.cc.Invoke(ctx, GravityService_UpdateMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GravityServiceServer is the server API for GravityService service.
 // All implementations must embed UnimplementedGravityServiceServer
 // for forward compatibility.
@@ -78,6 +90,7 @@ type GravityServiceServer interface {
 	SubmitTask(context.Context, *SubmitTaskRequest) (*SubmitTaskResponse, error)
 	SubmitVote(context.Context, *SubmitVoteRequest) (*SubmitVoteResponse, error)
 	SubmitAnswer(context.Context, *SubmitAnswerRequest) (*SubmitAnswerResponse, error)
+	UpdateMetadata(context.Context, *UpdateMetadataRequest) (*UpdateMetadataResponse, error)
 	mustEmbedUnimplementedGravityServiceServer()
 }
 
@@ -96,6 +109,9 @@ func (UnimplementedGravityServiceServer) SubmitVote(context.Context, *SubmitVote
 }
 func (UnimplementedGravityServiceServer) SubmitAnswer(context.Context, *SubmitAnswerRequest) (*SubmitAnswerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitAnswer not implemented")
+}
+func (UnimplementedGravityServiceServer) UpdateMetadata(context.Context, *UpdateMetadataRequest) (*UpdateMetadataResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateMetadata not implemented")
 }
 func (UnimplementedGravityServiceServer) mustEmbedUnimplementedGravityServiceServer() {}
 func (UnimplementedGravityServiceServer) testEmbeddedByValue()                        {}
@@ -172,6 +188,24 @@ func _GravityService_SubmitAnswer_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GravityService_UpdateMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GravityServiceServer).UpdateMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GravityService_UpdateMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GravityServiceServer).UpdateMetadata(ctx, req.(*UpdateMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GravityService_ServiceDesc is the grpc.ServiceDesc for GravityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +224,10 @@ var GravityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitAnswer",
 			Handler:    _GravityService_SubmitAnswer_Handler,
+		},
+		{
+			MethodName: "UpdateMetadata",
+			Handler:    _GravityService_UpdateMetadata_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
