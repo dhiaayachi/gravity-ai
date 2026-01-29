@@ -17,3 +17,11 @@ func cleanJSONMarkdown(content string) string {
 	content = strings.TrimSuffix(content, "```")
 	return strings.TrimSpace(content)
 }
+
+const aggregatePrompt = "\nAggregate these answers into a single, high-quality response. Try to reconcile all the answers into a single answer, if answers are contradictory return an error"
+const validatePrompt = `Task: %s
+Proposal: %s
+
+Does the proposal accurately and correctly answer the task? If you find any flaw in the answer it's not valid
+Respond with JSON object: {"valid": boolean, "reason": string}.
+`

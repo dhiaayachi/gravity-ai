@@ -59,12 +59,7 @@ func (c *OllamaClient) Generate(prompt string) (string, error) {
 
 func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, error) {
 	ctx := context.Background()
-	prompt := fmt.Sprintf(`Task: %s
-Proposal: %s
-
-Does the proposal accurately and correctly answer the task?
-Respond with JSON object: {"valid": boolean, "reason": string}.
-`, taskContent, proposal)
+	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
 
 	// Format expects json.RawMessage in this version
 	format := json.RawMessage(`"json"`)
@@ -100,6 +95,7 @@ func (c *OllamaClient) Aggregate(taskContent string, answers []string) (string, 
 	for i, ans := range answers {
 		prompt += fmt.Sprintf("Answer %d: %s\n", i+1, ans)
 	}
-	prompt += "\nAggregate these answers into a single, high-quality response."
+
+	prompt += aggregatePrompt
 	return c.Generate(prompt)
 }

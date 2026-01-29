@@ -58,6 +58,7 @@ type ClusterState interface {
 	GetLeaderAddr() string
 	GetFormattedID() string // For logging
 	GetServerCount() (int, error)
+	DropLeader() error
 }
 
 type defaultClusterState struct {
@@ -66,6 +67,11 @@ type defaultClusterState struct {
 
 func (d *defaultClusterState) IsLeader() bool {
 	return d.Node.Raft.State() == raft.Leader
+}
+
+func (d *defaultClusterState) DropLeader() error {
+	f := d.Node.Raft.LeadershipTransfer()
+	return f.Error()
 }
 
 func (d *defaultClusterState) GetLeaderAddr() string {
@@ -117,6 +123,18 @@ func (e *Engine) Start() {
 
 func (e *Engine) handleRaftEvent(event fsm.Event) {
 	e.logger.Info("Handling Raft Event", zap.String("type", string(event.Type)))
+	var err error
+	defer func() {
+		if err != nil {
+			e.logger.Error("Error handling Raft Event", zap.Error(err))
+			if e.clusterState.IsLeader() {
+				err = e.clusterState.DropLeader()
+				if err != nil {
+					e.logger.Error("Error dropping leadership", zap.Error(err))
+				}
+			}
+		}
+	}()
 	switch event.Type {
 	case fsm.EventTaskAdmitted:
 		task := event.Data.(*core.Task)
@@ -126,12 +144,13 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 		if e.clusterState.IsLeader() {
 			ans := event.Data.(*core.Answer)
 			// Get task for validation
-			task, err := e.fsm.GetTask(ans.TaskID)
+			var task *core.Task
+			task, err = e.fsm.GetTask(ans.TaskID)
 			if err != nil {
 				e.logger.Warn("Failed to get task", zap.String("taskID", ans.TaskID), zap.Error(err))
 				break
 			}
-			e.runProposalPhase(task, false)
+			err = e.runProposalPhase(task, false)
 		}
 	case fsm.EventTaskUpdated:
 		task := event.Data.(*core.Task)
@@ -140,7 +159,7 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 			e.notifyTaskCompletion(task)
 		case core.TaskStatusProposal:
 			// All nodes vote
-			e.runVotePhase(task)
+			err = e.runVotePhase(task)
 		}
 	case fsm.EventVoteSubmitted:
 		if e.clusterState.IsLeader() {
@@ -150,7 +169,7 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 				e.logger.Warn("Failed to get vote", zap.String("task", vote.TaskID), zap.Error(err))
 				break
 			}
-			e.runFinalizeTask(task)
+			err = e.runFinalizeTask(task)
 		}
 	}
 }
@@ -197,7 +216,10 @@ func (e *Engine) handleTaskTimeout(taskID string) {
 			quorum := serverCount/2 + 1
 
 			if len(answers) >= quorum {
-				e.runProposalPhase(task, true)
+				err := e.runProposalPhase(task, true)
+				if err != nil {
+					return
+				}
 				return // Successfully triggered or tried
 			}
 
@@ -234,21 +256,21 @@ func (e *Engine) notifyTaskCompletion(task *core.Task) {
 	e.taskNotifier.NotifyTaskCompletion(task)
 }
 
-func (e *Engine) runBrainstormPhase(task *core.Task) {
+func (e *Engine) runBrainstormPhase(task *core.Task) error {
 	e.logger.Debug("Contributing to Brainstorm", zap.String("task_id", task.ID))
 
 	// Simulate "Broadcasting" logic by just getting a local answer for now
 	ansContent, err := e.llm.Generate(task.Content)
 	if err != nil {
 		e.logger.Error("LLM generation failed", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("LLM generation failed: %w", err)
 	}
 
 	// Get leader address
 	leaderAddr := e.clusterState.GetLeaderAddr()
 	if leaderAddr == "" {
 		e.logger.Warn("Cannot submit answer: No leader known")
-		return
+		return fmt.Errorf("Cannot submit answer: No leader known")
 	}
 
 	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("leader_addr", leaderAddr), zap.String("answer", ansContent))
@@ -256,15 +278,16 @@ func (e *Engine) runBrainstormPhase(task *core.Task) {
 	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, e.nodeConfig.ID, ansContent)
 	if err != nil {
 		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("Failed to apply answer: %w", err)
 	}
+	return nil
 }
 
-func (e *Engine) runProposalPhase(task *core.Task, force bool) {
+func (e *Engine) runProposalPhase(task *core.Task, force bool) error {
 	// Guard: Only run proposal phase if task is in Admitted state.
 	// This prevents redundant aggregation when multiple answers arrive after quorum is met.
 	if task.Status != core.TaskStatusAdmitted {
-		return
+		return fmt.Errorf("task status is %s", task.Status)
 	}
 
 	// Retrieve answers (Reading from SyncMapFSM state locally since we are leader)
@@ -272,16 +295,17 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	if err != nil {
 		// Task not found
 		e.logger.Error("Failed to get answers", zap.Error(err), zap.String("task_id", task.ID))
+		return fmt.Errorf("failed to get answers: %w", err)
 	}
 
 	// 1. Check Participation
 	serverCount, err := e.clusterState.GetServerCount()
 	if err != nil {
 		e.logger.Error("Failed to get server count", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("failed to get server count: %w", err)
 	}
 	if serverCount == 0 {
-		return
+		return fmt.Errorf("no server found for task %s", task.ID)
 	}
 	quorum := serverCount/2 + 1
 
@@ -292,7 +316,7 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 		// Proceed on timeout with partial results
 	} else {
 		// Wait
-		return
+		return nil
 	}
 
 	e.logger.Info("Starting Proposal phase", zap.String("task_id", task.ID))
@@ -313,7 +337,7 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 	proposalContent, err := e.llm.Aggregate(task.Content, answerContents)
 	if err != nil {
 		e.logger.Error("LLM aggregation failed", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("LLM aggregation failed: %w", err)
 	}
 
 	// Update Task to Proposal status
@@ -329,11 +353,12 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) {
 
 	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
 		e.logger.Error("Failed to update task to proposal", zap.Error(f.Error()), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("failed to update task to proposal: %w", f.Error())
 	}
+	return nil
 }
 
-func (e *Engine) runVotePhase(task *core.Task) {
+func (e *Engine) runVotePhase(task *core.Task) error {
 
 	// Use LLM to validate the proposal
 	isValid, err := e.llm.Validate(task.Content, task.Result)
@@ -362,7 +387,7 @@ func (e *Engine) runVotePhase(task *core.Task) {
 		if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
 			log.Printf("[%s] Failed to submit vote (leader): %v", e.nodeConfig.ID, f.Error())
 		}
-		return
+		return nil
 	}
 
 	// 2. If Follower, submit to leader via gRPC
@@ -382,12 +407,12 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	leaderAddr := e.clusterState.GetLeaderAddr()
 	if leaderAddr == "" {
 		log.Printf("[%s] Cannot vote: No leader known", e.nodeConfig.ID)
-		return
+		return fmt.Errorf("cannot vote: No leader known")
 	}
 
 	if e.clusterClient == nil {
 		log.Printf("[%s] Cannot vote: ClusterClient not initialized", e.nodeConfig.ID)
-		return
+		return fmt.Errorf("cannot vote: ClusterClient not initialized")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -396,36 +421,37 @@ func (e *Engine) runVotePhase(task *core.Task) {
 	if err := e.clusterClient.SubmitVote(ctx, leaderAddr, task.ID, e.nodeConfig.ID, isValid); err != nil {
 		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
+	return nil
 }
 
-func (e *Engine) runFinalizeTask(task *core.Task) {
+func (e *Engine) runFinalizeTask(task *core.Task) error {
 	// Guard: Check if task is already final (Done or Failed)
 	// We re-check SyncMapFSM status because task variable might be old
 	currentTask, err := e.fsm.GetTask(task.ID)
 	if err != nil {
 		e.logger.Error("Failed to get task", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("failed to get task: %w", err)
 	}
 	if currentTask.Status == core.TaskStatusDone || currentTask.Status == core.TaskStatusFailed {
 		e.logger.Info("Task already finished", zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("task already finished")
 	}
 
 	votes, err := e.fsm.GetTaskVotes(task.ID)
 	if err != nil {
 		e.logger.Error("Failed to get task votes", zap.Error(err), zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("failed to get task votes: %w", err)
 	}
 
 	// Calculate Quorum
 	serverCount, err := e.clusterState.GetServerCount()
 	if err != nil {
 		e.logger.Error("Failed to get raft configuration", zap.Error(err))
-		return
+		return fmt.Errorf("failed to get raft configuration: %w", err)
 	}
 	if serverCount == 0 {
 		e.logger.Info("No raft configuration found", zap.String("task_id", task.ID))
-		return
+		return fmt.Errorf("no raft configuration found")
 	}
 
 	// Quorum is majority
@@ -454,7 +480,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 	} else {
 		e.logger.Info("No consensus reached, yet", zap.String("task_id", task.ID), zap.String("result", task.Result), zap.Int("quorum", quorum), zap.Int("rejected", rejected), zap.Int("accepted", accepted))
 		// No consensus yet
-		return
+		return nil
 	}
 
 	// Create a copy to update
@@ -471,7 +497,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) {
 		// Just log error
 		e.logger.Error("Failed to apply update task", zap.Error(f.Error()))
 	}
-
+	return nil
 	// Notify listeners is done via EventTaskUpdated in the event loop
 }
 
