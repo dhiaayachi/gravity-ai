@@ -10,21 +10,21 @@ to agree on a given answer/solution.
 
 ### Build CLI
 ```bash
-go build -o gravity-agent ./cmd/agent
+go build -o gravity-ai ./cmd/agent
 ```
 
 ### Run Agent
 ```bash
-./gravity-agent agent --config config.yaml
+./gravity-ai agent --config config.yaml
 ```
 
 ### Client Commands
 ```bash
 # Check status
-./gravity-agent status
+./gravity-ai status
 
 # Submit Task
-./gravity-agent submit -c "Hello World"
+./gravity-ai submit -c "Hello World"
 ```
 
 ## Architecture

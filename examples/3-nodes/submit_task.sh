@@ -38,23 +38,23 @@ if [ -z "$CONTENT" ]; then
     fi
 fi
 
-# Locate gravity-agent binary
+# Locate gravity-ai binary
 # Try current directory, then parent's parent (project root)
 GRAVITY_BIN=""
-if [ -f "./gravity-agent" ]; then
-    GRAVITY_BIN="./gravity-agent"
-elif [ -f "../../gravity-agent" ]; then
-    GRAVITY_BIN="../../gravity-agent"
+if [ -f "./gravity-ai" ]; then
+    GRAVITY_BIN="./gravity-ai"
+elif [ -f "../../gravity-ai" ]; then
+    GRAVITY_BIN="../../gravity-ai"
 else
     # Try finding in PATH
-    if command -v gravity-agent &> /dev/null; then
-        GRAVITY_BIN="gravity-agent"
+    if command -v gravity-ai &> /dev/null; then
+        GRAVITY_BIN="gravity-ai"
     fi
 fi
 
 if [ -z "$GRAVITY_BIN" ]; then
-    echo "Error: gravity-agent binary not found in current directory, project root, or PATH."
-    echo "Please build it with: go build -o gravity-agent ./cmd/agent"
+    echo "Error: gravity-ai binary not found in current directory, project root, or PATH."
+    echo "Please build it with: go build -o gravity-ai ./cmd/agent"
     exit 1
 fi
 

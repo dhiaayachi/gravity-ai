@@ -7,12 +7,12 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o gravity-agent ./cmd/agent
+RUN go build -o gravity-ai ./cmd/agent
 
 FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/gravity-agent .
+COPY --from=builder /app/gravity-ai .
 
-CMD ["./gravity-agent", "agent"]
+CMD ["./gravity-ai", "agent"]

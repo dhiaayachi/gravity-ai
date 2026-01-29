@@ -6,7 +6,7 @@ services:
       context: ../../
       dockerfile: examples/3-nodes/Dockerfile
     image: gravity-agent
-    command: [ "./gravity-agent", "agent" ]
+    command: [ "./gravity-ai", "agent" ]
     hostname: node1
     environment:
       - GRAVITY_LOG_LEVEL=debug
@@ -29,7 +29,7 @@ services:
 
   node2:
     image: gravity-agent
-    command: [ "./gravity-agent", "agent" ]
+    command: [ "./gravity-ai", "agent" ]
     hostname: node2
     depends_on:
       - node1
@@ -49,7 +49,7 @@ services:
 
   node3:
     image: gravity-agent
-    command: [ "./gravity-agent", "agent" ]
+    command: [ "./gravity-ai", "agent" ]
     hostname: node3
     depends_on:
       - node1

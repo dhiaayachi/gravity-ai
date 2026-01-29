@@ -25,14 +25,14 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
     Build the gravity agent CLI on your host machine:
     ```bash
     # From the project root
-    go build -o gravity-agent ./cmd/agent
+    go build -o gravity-ai ./cmd/agent
     ```
 
 4.  **Submit a Task**:
-    Use the `gravity-agent` CLI to submit a task to the leader (Node 1):
+    Use the `gravity-ai` CLI to submit a task to the leader (Node 1):
     
     ```bash
-    ./gravity-agent submit -u http://localhost:8080 -c "Write a haiku about space"
+    ./gravity-ai submit -u http://localhost:8080 -c "Write a haiku about space"
     ```
     
     Or use the helper script (which uses the CLI):
@@ -44,7 +44,7 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
 5.  **Check Status**:
     Check the status of the cluster nodes:
     ```bash
-    ./gravity-agent status -u http://localhost:8080
+    ./gravity-ai status -u http://localhost:8080
     ```
 
 6.  **View Logs**:
