@@ -206,6 +206,8 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 		clusterClient:   clusterClient,
 		taskNotifier:    &mockTaskNotifier{},
 		logger:          zap.NewExample(), // Use Example logger for stdout
+		llmProvider:     "mock",
+		llmModel:        "mock-model",
 	}
 
 	// Register cleanup
@@ -487,7 +489,7 @@ func TestNewEngine(t *testing.T) {
 	}
 	// NewEngine accesses node.Raft in defaultCommandSender
 
-	eng := NewEngine(node, nil, nil, &tasks_manager.TasksManager{}, zap.NewNop())
+	eng := NewEngine(node, nil, nil, &tasks_manager.TasksManager{}, zap.NewNop(), "mock", "mock-model")
 	if eng == nil {
 		t.Fatal("NewEngine returned nil")
 	}

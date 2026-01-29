@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
-	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
@@ -111,7 +111,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		mgr := tasks_manager.TasksManager{}
 		// Client no longer needs port
-		eng := engine.NewEngine(node, mockLLM, agentGrpc.NewClient(), &mgr, zap.NewNop())
+		eng := engine.NewEngine(node, mockLLM, agentGrpc.NewClient(), &mgr, zap.NewNop(), "mock", "mock-model")
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)

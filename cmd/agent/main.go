@@ -10,7 +10,7 @@ import (
 
 	"github.com/dhiaayachi/gravity-ai/config"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
-	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
 	gravityHttp "github.com/dhiaayachi/gravity-ai/internal/http"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
@@ -143,7 +143,7 @@ func main() {
 	clusterClient := agentGrpc.NewClient()
 
 	tasksMgr := tasks_manager.TasksManager{}
-	eng := engine.NewEngine(node, llmClient, clusterClient, &tasksMgr, appLogger)
+	eng := engine.NewEngine(node, llmClient, clusterClient, &tasksMgr, appLogger, cfg.LLMProvider, cfg.Model)
 
 	eng.Start()
 
@@ -157,7 +157,7 @@ func main() {
 	}
 
 	// Start HTTP Server for API/Admin
-	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, appLogger)
+	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, eng, appLogger)
 	go func() {
 		if err := httpServer.Run(); err != nil {
 			appLogger.Error("HTTP Start failed", zap.Error(err))

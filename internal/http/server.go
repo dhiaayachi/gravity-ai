@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	"github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -14,18 +15,20 @@ import (
 type Server struct {
 	router       *gin.Engine
 	agentService *grpc.AgentService
+	engine       *engine.Engine
 	httpServer   *http.Server
 	addr         string
 	logger       *zap.Logger
 }
 
-func NewServer(addr string, agentService *grpc.AgentService, logger *zap.Logger) *Server {
+func NewServer(addr string, agentService *grpc.AgentService, engine *engine.Engine, logger *zap.Logger) *Server {
 	// standard gin with logger and recovery
 	router := gin.Default()
 
 	s := &Server{
 		router:       router,
 		agentService: agentService,
+		engine:       engine,
 		addr:         addr,
 		logger:       logger.With(zap.String("component", "http_server")),
 	}
@@ -41,6 +44,7 @@ func (s *Server) registerRoutes() {
 		api.POST("/chat", s.handleChat)
 		api.GET("/tags", s.handleTags)
 		api.GET("/version", s.handleVersion)
+		api.GET("/agent/state", s.handleAgentState)
 	}
 }
 

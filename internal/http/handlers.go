@@ -157,3 +157,8 @@ func (s *Server) handleTags(c *gin.Context) {
 func (s *Server) handleVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"version": Version})
 }
+
+func (s *Server) handleAgentState(c *gin.Context) {
+	state := s.engine.GetAgentState()
+	c.JSON(http.StatusOK, state)
+}

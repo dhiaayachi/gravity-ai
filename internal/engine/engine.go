@@ -44,6 +44,10 @@ type Engine struct {
 	VoteTimeout     time.Duration
 
 	logger *zap.Logger
+
+	// Agent State
+	llmProvider string
+	llmModel    string
 }
 
 // ClusterClient defines the interface for communicating with other agents
@@ -114,7 +118,7 @@ func (d *defaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger) *Engine {
+func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger, llmProvider, llmModel string) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
@@ -127,6 +131,27 @@ func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient Clust
 		clusterClient:   clusterClient,
 		taskNotifier:    notifier,
 		logger:          logger.With(zap.String("component", "engine")),
+		llmProvider:     llmProvider,
+		llmModel:        llmModel,
+	}
+}
+
+// AgentState represents the exposed state of the agent
+type AgentState struct {
+	ID          string `json:"id"`
+	RaftState   string `json:"raft_state"`
+	Reputation  int    `json:"reputation"`
+	LLMProvider string `json:"llm_provider"`
+	LLMModel    string `json:"llm_model"`
+}
+
+func (e *Engine) GetAgentState() AgentState {
+	return AgentState{
+		ID:          e.nodeConfig.ID,
+		RaftState:   e.Node.Raft.State().String(),
+		Reputation:  e.fsm.GetReputation(e.nodeConfig.ID),
+		LLMProvider: e.llmProvider,
+		LLMModel:    e.llmModel,
 	}
 }
 
