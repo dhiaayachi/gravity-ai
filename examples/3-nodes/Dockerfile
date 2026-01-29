@@ -15,4 +15,4 @@ WORKDIR /app
 
 COPY --from=builder /app/gravity-agent .
 
-CMD ["./gravity-agent"]
+CMD ["./gravity-agent", "agent"]

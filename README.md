@@ -6,6 +6,27 @@ A possible use case is a critical task where answer accuracy and
 consensus is important, and we would like a community of diverse agents 
 to agree on a given answer/solution.
 
+## Usage
+
+### Build CLI
+```bash
+go build -o gravity-agent ./cmd/agent
+```
+
+### Run Agent
+```bash
+./gravity-agent agent --config config.yaml
+```
+
+### Client Commands
+```bash
+# Check status
+./gravity-agent status
+
+# Submit Task
+./gravity-agent submit -c "Hello World"
+```
+
 ## Architecture
 
 Each agent will include an agent loop and a raft instance. 

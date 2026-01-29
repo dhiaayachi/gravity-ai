@@ -4,12 +4,6 @@
 NODE_URL="http://localhost:8080"
 CONTENT=""
 
-# Check for jq
-if ! command -v jq &> /dev/null; then
-    echo "Error: jq is required but not installed."
-    exit 1
-fi
-
 # Help message
 function show_help {
     echo "Usage: ./submit_task.sh [OPTIONS]"
@@ -44,30 +38,29 @@ if [ -z "$CONTENT" ]; then
     fi
 fi
 
-
-echo "Submitting task to $NODE_URL (Ollama API)..."
-
-# Normalize content to handle escape sequences (like \n) if passed as string literals
-# This helps with shells that pass multiline strings with literal escapes
-CONTENT=$(printf "%b" "$CONTENT")
-
-echo "Prompt: $CONTENT"
-
-# Construct JSON payload using jq for safety
-PAYLOAD=$(jq -n --arg model "gravity" --arg prompt "$CONTENT" '{model: $model, prompt: $prompt}')
-
-# Submit task
-# Use -sS to show errors but keep progress silent, and --fail to exit on HTTP error
-RESPONSE=$(curl -sS --fail -X POST "$NODE_URL/api/generate" \
-     -H "Content-Type: application/json" \
-     -d "$PAYLOAD")
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "Response Received:"
-    echo "$RESPONSE" | jq
+# Locate gravity-agent binary
+# Try current directory, then parent's parent (project root)
+GRAVITY_BIN=""
+if [ -f "./gravity-agent" ]; then
+    GRAVITY_BIN="./gravity-agent"
+elif [ -f "../../gravity-agent" ]; then
+    GRAVITY_BIN="../../gravity-agent"
 else
-    echo ""
-    echo "Failed to submit task. (Check if node is running at $NODE_URL)"
+    # Try finding in PATH
+    if command -v gravity-agent &> /dev/null; then
+        GRAVITY_BIN="gravity-agent"
+    fi
+fi
+
+if [ -z "$GRAVITY_BIN" ]; then
+    echo "Error: gravity-agent binary not found in current directory, project root, or PATH."
+    echo "Please build it with: go build -o gravity-agent ./cmd/agent"
     exit 1
 fi
+
+echo "Submitting task to $NODE_URL using $GRAVITY_BIN..."
+
+# Call the CLI
+# Note: passing content as argument. If content is complex, stdin might be safer but CLI supports both.
+# Let's use stdin to avoid shell escaping issues with complex prompts
+echo "$CONTENT" | $GRAVITY_BIN submit --url "$NODE_URL" --content ""
