@@ -48,7 +48,7 @@ func (f *SyncMapFSM) GetTaskVotes(id string) (map[string]core.Vote, error) {
 func (f *SyncMapFSM) GetReputation(id string) int {
 	val, ok := f.Reputations.Load(id)
 	if !ok {
-		return 0 // Default reputation
+		return 100 // Default reputation
 	}
 	return val.(int)
 }
