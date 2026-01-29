@@ -15,6 +15,7 @@ import (
 type SyncMapFSM struct {
 	NodeID      string
 	Reputations sync.Map                        // AgentID -> int
+	Metadata    sync.Map                        // AgentID -> core.AgentMetadata
 	Tasks       map[string]*core.Task           // TaskID -> *core.Task
 	TaskAnswers map[string][]core.Answer        // TaskID -> []core.Answer
 	TaskVotes   map[string]map[string]core.Vote // TaskID -> []core.Vote
@@ -59,6 +60,15 @@ func (f *SyncMapFSM) GetAllReputations() map[string]int {
 		return true
 	})
 	return reps
+}
+
+func (f *SyncMapFSM) GetMetadata(id string) *core.AgentMetadata {
+	val, ok := f.Metadata.Load(id)
+	if !ok {
+		return nil
+	}
+	meta := val.(core.AgentMetadata)
+	return &meta
 }
 
 func (f *SyncMapFSM) GetTask(id string) (*core.Task, error) {
@@ -193,12 +203,19 @@ func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 		return true
 	})
 
+	metadata := make(map[string]core.AgentMetadata)
+	f.Metadata.Range(func(key, value interface{}) bool {
+		metadata[key.(string)] = value.(core.AgentMetadata)
+		return true
+	})
+
 	tasks := f.Tasks
 
 	// Copy answers/votes if needed, skipped for brevity in this step but should be here
 
 	return &Snapshot{
 		Reputations: reputations,
+		Metadata:    metadata,
 		Tasks:       tasks,
 	}, nil
 }
@@ -217,6 +234,11 @@ func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
 	f.Reputations = sync.Map{}
 	for k, v := range snapshot.Reputations {
 		f.Reputations.Store(k, v)
+	}
+
+	f.Metadata = sync.Map{}
+	for k, v := range snapshot.Metadata {
+		f.Metadata.Store(k, v)
 	}
 
 	f.Tasks = make(map[string]*core.Task)

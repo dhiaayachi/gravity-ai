@@ -45,3 +45,9 @@ type AgentConfig struct {
 	Reputation int    `json:"reputation"`
 	Address    string `json:"address"` // Network address for Raft/RPC
 }
+
+type AgentMetadata struct {
+	ID          string `json:"id"`
+	LLMProvider string `json:"llm_provider"`
+	LLMModel    string `json:"llm_model"`
+}

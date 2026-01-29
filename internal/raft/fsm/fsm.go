@@ -14,6 +14,7 @@ type FSM interface {
 	GetTaskVotes(id string) (map[string]core.Vote, error)
 	GetReputation(id string) int
 	GetAllReputations() map[string]int
+	GetMetadata(id string) *core.AgentMetadata
 }
 
 // Helper types for Logs and Snapshots
@@ -26,6 +27,7 @@ const (
 	CommandTypeSubmitAnswer     CommandType = "submit_answer"
 	CommandTypeUpdateTask       CommandType = "update_task"
 	CommandTypeSubmitVote       CommandType = "submit_vote"
+	CommandTypeUpdateMetadata   CommandType = "update_metadata"
 )
 
 type LogCommand struct {
@@ -36,6 +38,7 @@ type LogCommand struct {
 
 type Snapshot struct {
 	Reputations map[string]int
+	Metadata    map[string]core.AgentMetadata
 	Tasks       map[string]*core.Task
 }
 
@@ -60,6 +63,7 @@ func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
 func (s *Snapshot) Release() {}
 
 type SnapshotData struct {
-	Reputations map[string]int        `json:"reputations"`
-	Tasks       map[string]*core.Task `json:"tasks"`
+	Reputations map[string]int                `json:"reputations"`
+	Metadata    map[string]core.AgentMetadata `json:"metadata"`
+	Tasks       map[string]*core.Task         `json:"tasks"`
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
+	"github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
@@ -136,17 +137,8 @@ func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient Clust
 	}
 }
 
-// AgentState represents the exposed state of the agent
-type AgentState struct {
-	ID          string `json:"id"`
-	RaftState   string `json:"raft_state"`
-	Reputation  int    `json:"reputation"`
-	LLMProvider string `json:"llm_provider"`
-	LLMModel    string `json:"llm_model"`
-}
-
-func (e *Engine) GetAgentState() AgentState {
-	return AgentState{
+func (e *Engine) GetAgentState() state.AgentState {
+	return state.AgentState{
 		ID:          e.nodeConfig.ID,
 		RaftState:   e.Node.Raft.State().String(),
 		Reputation:  e.fsm.GetReputation(e.nodeConfig.ID),
@@ -157,6 +149,37 @@ func (e *Engine) GetAgentState() AgentState {
 
 func (e *Engine) Start() {
 	e.logger.Info("Starting Engine")
+
+	// Publish Metadata
+	go func() {
+		// Wait a bit for Raft to be ready?
+		time.Sleep(2 * time.Second)
+
+		meta := core.AgentMetadata{
+			ID:          e.nodeConfig.ID,
+			LLMProvider: e.llmProvider,
+			LLMModel:    e.llmModel,
+		}
+
+		metaBytes, _ := json.Marshal(meta)
+		cmd := fsm.LogCommand{
+			Type:  fsm.CommandTypeUpdateMetadata,
+			Value: metaBytes,
+		}
+		b, _ := json.Marshal(cmd)
+
+		// Retry loop
+		for i := 0; i < 5; i++ {
+			f := e.Node.Raft.Apply(b, 5*time.Second)
+			if f.Error() == nil {
+				e.logger.Info("Published Metadata", zap.String("id", meta.ID))
+				break
+			}
+			e.logger.Warn("Failed to publish metadata, retrying...", zap.Error(f.Error()))
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
 	go func() {
 		for {
 			select {
@@ -665,6 +688,51 @@ func (e *Engine) checkForLeadershipTransfer() {
 			e.logger.Info("Leadership transfer initiated", zap.String("target", bestNode))
 		}
 	}
+}
+
+func (e *Engine) GetClusterAgentsState() []state.AgentState {
+	cfg := e.Node.Raft.GetConfiguration()
+	if err := cfg.Error(); err != nil {
+		e.logger.Error("Failed to get raft configuration", zap.Error(err))
+		return nil
+	}
+
+	var states []state.AgentState
+
+	for _, srv := range cfg.Configuration().Servers {
+		id := string(srv.ID)
+
+		// Raft State (Only accurate for self really, but we can infer Role if we track it?
+		// Actually RaftState from others is distinct. We only know if *we* are leader.
+		// For others, we only know they are in the config.
+		// Let's just put "Unknown" or exclude RaftState for others if not leader?
+		// Or maybe we can just say "Voter"?
+
+		raftState := "Voter"
+		if id == e.nodeConfig.ID {
+			raftState = e.Node.Raft.State().String()
+		} else {
+			// If we are leader, we might look at raft stats to see if they are followers?
+			// Simplify for now.
+		}
+
+		rep := e.fsm.GetReputation(id)
+		meta := e.fsm.GetMetadata(id)
+
+		agentState := state.AgentState{
+			ID:         id,
+			RaftState:  raftState,
+			Reputation: rep,
+		}
+
+		if meta != nil {
+			agentState.LLMProvider = meta.LLMProvider
+			agentState.LLMModel = meta.LLMModel
+		}
+
+		states = append(states, agentState)
+	}
+	return states
 }
 
 func (e *Engine) startTimer(taskID string, duration time.Duration) {
