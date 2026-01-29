@@ -59,6 +59,7 @@ type ClusterState interface {
 	GetFormattedID() string // For logging
 	GetServerCount() (int, error)
 	DropLeader() error
+	TransferLeadership(id string) error
 }
 
 type defaultClusterState struct {
@@ -72,6 +73,28 @@ func (d *defaultClusterState) IsLeader() bool {
 func (d *defaultClusterState) DropLeader() error {
 	f := d.Node.Raft.LeadershipTransfer()
 	return f.Error()
+}
+
+func (d *defaultClusterState) TransferLeadership(id string) error {
+	address, err := d.getPeerAddress(id)
+	if err != nil {
+		return err
+	}
+	f := d.Node.Raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(address))
+	return f.Error()
+}
+
+func (d *defaultClusterState) getPeerAddress(id string) (string, error) {
+	cfg := d.Node.Raft.GetConfiguration()
+	if err := cfg.Error(); err != nil {
+		return "", err
+	}
+	for _, srv := range cfg.Configuration().Servers {
+		if string(srv.ID) == id {
+			return string(srv.Address), nil
+		}
+	}
+	return "", fmt.Errorf("peer not found: %s", id)
 }
 
 func (d *defaultClusterState) GetLeaderAddr() string {
@@ -459,7 +482,12 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 
 	accepted := 0
 	rejected := 0
+
+	// Track who voted what for reputation calculation
+	voters := make(map[string]bool)
+
 	for _, v := range votes {
+		voters[v.AgentID] = v.Accepted
 		if v.Accepted {
 			accepted++
 		} else {
@@ -472,17 +500,16 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 	if accepted >= quorum {
 		e.logger.Info("Consensus reached: Accepted", zap.String("task_id", task.ID), zap.String("result", task.Result))
 		finalStatus = core.TaskStatusDone
-		// TODO: Increment leader reputation
 	} else if rejected >= quorum {
 		e.logger.Info("Consensus reached: REJECTED", zap.String("task_id", task.ID), zap.String("result", task.Result))
 		finalStatus = core.TaskStatusFailed
-		// TODO: Decrement leader reputation & trigger election
 	} else {
 		e.logger.Info("No consensus reached, yet", zap.String("task_id", task.ID), zap.String("result", task.Result), zap.Int("quorum", quorum), zap.Int("rejected", rejected), zap.Int("accepted", accepted))
 		// No consensus yet
 		return nil
 	}
 
+	// 1. Update Task
 	// Create a copy to update
 	finalTask := *task
 	finalTask.Status = finalStatus
@@ -494,11 +521,91 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 	}
 	b, _ := json.Marshal(cmd)
 	if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-		// Just log error
 		e.logger.Error("Failed to apply update task", zap.Error(f.Error()))
+		return fmt.Errorf("failed to apply update task: %w", f.Error()) // Stop if task update fails
 	}
+
+	// 2. Update Reputations
+	// Leader Reward/Penalty
+	myID := e.nodeConfig.ID
+	currentMyRep := e.fsm.GetReputation(myID)
+	newMyRep := currentMyRep
+	if finalStatus == core.TaskStatusDone {
+		newMyRep += 10
+	} else {
+		newMyRep -= 10
+	}
+	e.applyReputationUpdate(myID, newMyRep)
+
+	// Voters Reward/Penalty
+	for voterID, votedAccepted := range voters {
+		if voterID == myID {
+			continue // Already handled leader if they voted (which they should have)
+		}
+
+		rep := e.fsm.GetReputation(voterID)
+		// Reward if agreed with outcome
+		// Consenus Accepted (Done) AND Voted Accepted -> Agree
+		// Consensus Rejected (Failed) AND Voted Rejected -> Agree
+		agreed := (finalStatus == core.TaskStatusDone && votedAccepted) || (finalStatus == core.TaskStatusFailed && !votedAccepted)
+
+		if agreed {
+			rep += 1
+		} else {
+			rep -= 1
+		}
+		e.applyReputationUpdate(voterID, rep)
+	}
+
+	// 3. Check for Leadership Transfer
+	e.checkForLeadershipTransfer()
+
 	return nil
 	// Notify listeners is done via EventTaskUpdated in the event loop
+}
+
+func (e *Engine) applyReputationUpdate(agentID string, newRep int) {
+	repBytes, _ := json.Marshal(newRep)
+	cmd := fsm.LogCommand{
+		Type:    fsm.CommandTypeUpdateReputation,
+		AgentID: agentID,
+		Value:   repBytes,
+	}
+	b, _ := json.Marshal(cmd)
+	// Fire and forget for individual updates to avoid stalling?
+	// Or blocking? Better blocking to ensure consistency before transfer check.
+	if f := e.Node.Raft.Apply(b, 2*time.Second); f.Error() != nil {
+		e.logger.Error("Failed to apply reputation update", zap.String("agent_id", agentID), zap.Error(f.Error()))
+	}
+}
+
+func (e *Engine) checkForLeadershipTransfer() {
+	reps := e.fsm.GetAllReputations()
+	myID := e.nodeConfig.ID
+	myRep := e.fsm.GetReputation(myID)
+
+	var bestNode string = myID
+	maxRep := myRep // Start with self
+
+	for id, rep := range reps {
+		if rep > maxRep {
+			maxRep = rep
+			bestNode = id
+		}
+	}
+
+	if bestNode != myID {
+		e.logger.Info("Found node with higher reputation. Attempting leadership transfer.",
+			zap.String("current_leader", myID),
+			zap.Int("current_rep", myRep),
+			zap.String("target_node", bestNode),
+			zap.Int("target_rep", maxRep))
+		if err := e.clusterState.TransferLeadership(bestNode); err != nil {
+			e.logger.Error("Failed to transfer leadership", zap.Error(err))
+		} else {
+			e.logger.Info("Leadership transfer initiated", zap.String("target", bestNode))
+		}
+	}
 }
 
 func (e *Engine) startTimer(taskID string, duration time.Duration) {

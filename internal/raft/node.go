@@ -13,7 +13,7 @@ import (
 type AgentNode struct {
 	Raft      *raft.Raft
 	FSM       *fsm.SyncMapFSM
-	Transport *ReputationTransport
+	Transport raft.Transport
 	Config    *Config
 	// Keep stores to close them
 	logStore    *raftwal.WAL
@@ -55,11 +55,8 @@ func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*A
 		return nil, fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// Wrap transport with ReputationTransport
-	repTransport := NewReputationTransport(transport, mFsm, cfg.ID)
-
 	// Create Raft
-	r, err := raft.NewRaft(raftConfig, mFsm, logStore, logStore, snapStore, repTransport)
+	r, err := raft.NewRaft(raftConfig, mFsm, logStore, logStore, snapStore, transport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
@@ -90,7 +87,7 @@ func NewAgentNode(cfg *Config, transport raft.Transport, logger *zap.Logger) (*A
 	return &AgentNode{
 		Raft:        r,
 		FSM:         mFsm,
-		Transport:   repTransport,
+		Transport:   transport,
 		Config:      cfg,
 		logStore:    logStore,
 		stableStore: logStore,
@@ -111,9 +108,9 @@ func (a *AgentNode) Close() error {
 	if err := a.stableStore.Close(); err != nil {
 		return err
 	}
-	if err := a.Transport.Close(); err != nil {
-		return err
-	}
+	// if err := a.Transport.Close(); err != nil {
+	// 	return err
+	// }
 	if err := a.logStore.Close(); err != nil {
 		return err
 	}

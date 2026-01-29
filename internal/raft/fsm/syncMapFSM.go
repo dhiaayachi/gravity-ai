@@ -44,6 +44,23 @@ func (f *SyncMapFSM) GetTaskVotes(id string) (map[string]core.Vote, error) {
 	return val, nil
 }
 
+func (f *SyncMapFSM) GetReputation(id string) int {
+	val, ok := f.Reputations.Load(id)
+	if !ok {
+		return 0 // Default reputation
+	}
+	return val.(int)
+}
+
+func (f *SyncMapFSM) GetAllReputations() map[string]int {
+	reps := make(map[string]int)
+	f.Reputations.Range(func(key, value interface{}) bool {
+		reps[key.(string)] = value.(int)
+		return true
+	})
+	return reps
+}
+
 func (f *SyncMapFSM) GetTask(id string) (*core.Task, error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()

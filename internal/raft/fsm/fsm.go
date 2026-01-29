@@ -12,6 +12,8 @@ type FSM interface {
 	GetTask(id string) (*core.Task, error)
 	GetTaskAnswers(id string) ([]core.Answer, error)
 	GetTaskVotes(id string) (map[string]core.Vote, error)
+	GetReputation(id string) int
+	GetAllReputations() map[string]int
 }
 
 // Helper types for Logs and Snapshots

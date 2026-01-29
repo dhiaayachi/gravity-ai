@@ -31,20 +31,18 @@ import (
 // OR we can mock Raft? No, Raft is a struct.
 // So we must bootstrap a single node Raft cluster and wait for it to be leader.
 
-type mockClusterState struct {
-	serverCount int
-	isLeader    bool
-	id          string
-	raft        *raft.Raft
+func (m *mockClusterState) DropLeader() error {
+	return nil
+}
+
+func (m *mockClusterState) TransferLeadership(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.transferTarget = id
+	return nil
 }
 
 func (m *mockClusterState) IsLeader() bool {
-	// If we use real Raft, we should probably check real state,
-	// but strictly for "Apply" to work, Raft must be leader.
-	// Tests manually set h.cluster.isLeader = true/false to test logic flow.
-	// But now that logic flow calls Real Raft Apply.
-	// Real Raft Apply will Fail if not leader.
-	// So we MUST ensure Real Raft is leader.
 	return m.isLeader
 }
 
@@ -60,8 +58,13 @@ func (m *mockClusterState) GetServerCount() (int, error) {
 	return m.serverCount, nil
 }
 
-func (m *mockClusterState) DropLeader() error {
-	return nil
+type mockClusterState struct {
+	serverCount    int
+	isLeader       bool
+	id             string
+	raft           *raft.Raft
+	transferTarget string
+	mu             sync.Mutex
 }
 
 type mockLLM struct {
