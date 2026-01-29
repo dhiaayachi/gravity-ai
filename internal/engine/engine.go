@@ -509,10 +509,42 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 		return nil
 	}
 
-	// 1. Update Task
+	// 1. Calculate Confidence Score
+	// Confidence = Sum(Reputations of Agreeing Agents) / Sum(Reputations of All Voting Agents)
+	var totalRep float64
+	var agreeingRep float64
+
+	for voterID, votedAccepted := range voters {
+		rep := float64(e.fsm.GetReputation(voterID))
+		totalRep += rep
+
+		agreed := (finalStatus == core.TaskStatusDone && votedAccepted) || (finalStatus == core.TaskStatusFailed && !votedAccepted)
+		if agreed {
+			agreeingRep += rep
+		}
+	}
+
+	// Add Leader's reputation to correct bucket (Leader implicitly agrees with outcome logic mostly, but let's stick to voters map if leader is in it?)
+	// Wait, leader usually votes too? Yes, leader votes in runVotePhase "1. If Leader, apply directly".
+	// The `voters` map comes from `votes` which includes leader's vote.
+	// So `voters` loop covers everyone who voted.
+
+	var confidenceScore float64
+	if totalRep > 0 {
+		confidenceScore = agreeingRep / totalRep
+	}
+
+	// 2. Update Task
 	// Create a copy to update
 	finalTask := *task
 	finalTask.Status = finalStatus
+	finalTask.ConfidenceScore = confidenceScore
+
+	e.logger.Info("Calculated Confidence Score",
+		zap.String("task_id", task.ID),
+		zap.Float64("score", confidenceScore),
+		zap.Float64("agreeing_rep", agreeingRep),
+		zap.Float64("total_rep", totalRep))
 
 	taskBytes, _ := json.Marshal(finalTask)
 	cmd := fsm.LogCommand{

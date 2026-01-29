@@ -154,6 +154,7 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		if existing, ok := f.Tasks[task.ID]; ok {
 			existing.Status = task.Status
 			existing.Result = task.Result
+			existing.ConfidenceScore = task.ConfidenceScore
 
 			// Notify
 			select {

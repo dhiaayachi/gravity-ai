@@ -51,6 +51,16 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// 3. Verify Reputations
+
+	// Verify Task Confidence Score
+	// Leader (100) + Worker1 (100) Agree. Worker2 (90) Disagree.
+	// Total = 290. Agree = 200. Score = 200/290 = 0.6896...
+	finalTask, _ := h.fsm.GetTask(task.ID)
+	expectedScore := 200.0 / 290.0
+	if finalTask.ConfidenceScore < expectedScore-0.001 || finalTask.ConfidenceScore > expectedScore+0.001 {
+		t.Errorf("Expected ConfidenceScore ~%f, got %f", expectedScore, finalTask.ConfidenceScore)
+	}
+
 	// Leader: 100 + 10 = 110 -> Clamped to 100
 	lRep := h.fsm.GetReputation(leaderID)
 	if lRep != 100 {

@@ -16,19 +16,20 @@ const (
 
 // Task represents a unit of work to be processed by the agents
 type Task struct {
-	ID        string     `json:"id"`
-	Content   string     `json:"content"`
-	Status    TaskStatus `json:"status"`
-	Requester string     `json:"requester"` // Could be user or another system
-	CreatedAt time.Time  `json:"created_at"`
-	Result    string     `json:"result,omitempty"`
+	ID              string     `json:"id"`
+	Content         string     `json:"content"`
+	Status          TaskStatus `json:"status"`
+	Requester       string     `json:"requester"` // Could be user or another system
+	CreatedAt       time.Time  `json:"created_at"`
+	Result          string     `json:"result,omitempty"`
+	ConfidenceScore float64    `json:"confidence_score,omitempty"`
 }
 
 // Answer represents a response from a single agent during Brainstorm phase
 type Answer struct {
-	TaskID   string `json:"task_id"`
-	AgentID  string `json:"agent_id"`
-	Content  string `json:"content"`
+	TaskID  string `json:"task_id"`
+	AgentID string `json:"agent_id"`
+	Content string `json:"content"`
 }
 
 // Vote represents a vote from an agent during the Vote phase

@@ -21,10 +21,11 @@ type OllamaGenerateRequest struct {
 }
 
 type OllamaGenerateResponse struct {
-	Model     string `json:"model"`
-	CreatedAt string `json:"created_at"`
-	Response  string `json:"response"`
-	Done      bool   `json:"done"`
+	Model           string  `json:"model"`
+	CreatedAt       string  `json:"created_at"`
+	Response        string  `json:"response"`
+	Done            bool    `json:"done"`
+	ConfidenceScore float64 `json:"confidence_score,omitempty"`
 }
 
 type OllamaChatRequest struct {
@@ -39,10 +40,11 @@ type OllamaMessage struct {
 }
 
 type OllamaChatResponse struct {
-	Model     string        `json:"model"`
-	CreatedAt string        `json:"created_at"`
-	Message   OllamaMessage `json:"message"`
-	Done      bool          `json:"done"`
+	Model           string        `json:"model"`
+	CreatedAt       string        `json:"created_at"`
+	Message         OllamaMessage `json:"message"`
+	Done            bool          `json:"done"`
+	ConfidenceScore float64       `json:"confidence_score,omitempty"`
 }
 
 type OllamaTagsResponse struct {
@@ -83,10 +85,11 @@ func (s *Server) handleGenerate(c *gin.Context) {
 	}
 
 	resp := OllamaGenerateResponse{
-		Model:     req.Model, // Echo back requested model or actual?
-		CreatedAt: time.Now().Format(time.RFC3339),
-		Response:  task.Result, // Use task result as the response
-		Done:      true,
+		Model:           req.Model, // Echo back requested model or actual?
+		CreatedAt:       time.Now().Format(time.RFC3339),
+		Response:        task.Result, // Use task result as the response
+		Done:            true,
+		ConfidenceScore: task.ConfidenceScore,
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -129,7 +132,8 @@ func (s *Server) handleChat(c *gin.Context) {
 			Role:    "assistant",
 			Content: task.Result,
 		},
-		Done: true,
+		Done:            true,
+		ConfidenceScore: task.ConfidenceScore,
 	}
 
 	c.JSON(http.StatusOK, resp)

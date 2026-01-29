@@ -205,7 +205,7 @@ func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 		VoteTimeout:     10 * time.Second,
 		clusterClient:   clusterClient,
 		taskNotifier:    &mockTaskNotifier{},
-		logger:          zap.NewNop(),
+		logger:          zap.NewExample(), // Use Example logger for stdout
 	}
 
 	// Register cleanup
