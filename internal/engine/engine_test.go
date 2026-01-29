@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
-	"github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
+	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	fsm2 "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/hashicorp/raft"
@@ -58,6 +58,10 @@ func (m *mockClusterState) GetFormattedID() string {
 
 func (m *mockClusterState) GetServerCount() (int, error) {
 	return m.serverCount, nil
+}
+
+func (m *mockClusterState) DropLeader() error {
+	return nil
 }
 
 type mockLLM struct {
