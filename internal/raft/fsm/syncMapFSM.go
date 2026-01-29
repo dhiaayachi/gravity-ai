@@ -20,6 +20,9 @@ type SyncMapFSM struct {
 	TaskAnswers map[string][]core.Answer        // TaskID -> []core.Answer
 	TaskVotes   map[string]map[string]core.Vote // TaskID -> []core.Vote
 
+	KeyVersions sync.Map                  // string (Key) -> uint64
+	Subscribers map[string][]chan KVEntry // Key -> []chan KVEntry
+
 	mutex sync.RWMutex
 	// Events channel to notify Engine of state changes
 	EventCh chan Event
@@ -106,7 +109,103 @@ func NewSyncMapFSM(nodeID string) *SyncMapFSM {
 		Tasks:       make(map[string]*core.Task),
 		TaskAnswers: make(map[string][]core.Answer),
 		TaskVotes:   make(map[string]map[string]core.Vote),
+		Subscribers: make(map[string][]chan KVEntry),
 	}
+}
+
+// Subscribe implements the FSM interface
+func (f *SyncMapFSM) Subscribe(prefix string, id string, version uint64) <-chan KVEntry {
+	key := prefix + ":" + id
+	ch := make(chan KVEntry, 1) // Buffered channel to match "notification" semantics
+
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	// Get Current Version
+	var currentVer uint64
+	if val, ok := f.KeyVersions.Load(key); ok {
+		currentVer = val.(uint64)
+	} else {
+		currentVer = 0
+	}
+
+	// Logic:
+	// If version > 0 AND current > version: Send current data immediately.
+	// If version == 0 OR current <= version: Register subscriber for next update.
+
+	if currentVer > version {
+		// Send immediate update
+		val := f.getByKey(prefix, id)
+		if val != nil {
+			ch <- KVEntry{
+				Key:     key,
+				Value:   val,
+				Version: currentVer,
+			}
+			close(ch)
+			return ch // Don't add to map, just return closed channel with data
+		}
+	}
+
+	// Register for future updates
+	f.Subscribers[key] = append(f.Subscribers[key], ch)
+
+	return ch
+}
+
+func (f *SyncMapFSM) notifySubscribers(key string, value interface{}, version uint64) {
+	// Mutex is already held by Apply
+	subscribers, ok := f.Subscribers[key]
+	if !ok {
+		return
+	}
+
+	entry := KVEntry{
+		Key:     key,
+		Value:   value,
+		Version: version,
+	}
+
+	for _, ch := range subscribers {
+		select {
+		case ch <- entry:
+		default:
+			// If channel is full, we drop the notification?
+			// Or should we use larger buffer?
+			// Ideally we don't block Apply.
+			log.Printf("Warning: Subscriber channel full for key %s", key)
+		}
+		close(ch)
+	}
+
+	// Remove subscribers for this key (one-shot)
+	delete(f.Subscribers, key)
+}
+
+func (f *SyncMapFSM) getByKey(prefix, id string) interface{} {
+	switch prefix {
+	case KeyPrefixReputation:
+		return f.GetReputation(id)
+	case KeyPrefixTask:
+		task, _ := f.GetTask(id)
+		return task
+	case KeyPrefixMetadata:
+		return f.GetMetadata(id)
+	default:
+		return nil
+	}
+}
+
+func (f *SyncMapFSM) incrementVersion(key string) uint64 {
+	var newVer uint64
+	val, ok := f.KeyVersions.Load(key)
+	if !ok {
+		newVer = 1
+	} else {
+		newVer = val.(uint64) + 1
+	}
+	f.KeyVersions.Store(key, newVer)
+	return newVer
 }
 
 // Apply applies a Raft log entry to the SyncMapFSM
@@ -125,6 +224,11 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			return fmt.Errorf("failed to unmarshal reputation: %w", err)
 		}
 		f.Reputations.Store(cmd.AgentID, rep)
+
+		// Notify Subscribers
+		key := KeyPrefixReputation + ":" + cmd.AgentID
+		ver := f.incrementVersion(key)
+		f.notifySubscribers(key, rep, ver)
 	case CommandTypeAdmitTask:
 		var task core.Task
 		if err := json.Unmarshal(cmd.Value, &task); err != nil {
@@ -139,6 +243,11 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		default:
 			log.Printf("[%s] SyncMapFSM EventCh full, dropping event", f.NodeID)
 		}
+
+		// Notify Subscribers
+		key := KeyPrefixTask + ":" + task.ID
+		ver := f.incrementVersion(key)
+		f.notifySubscribers(key, &task, ver)
 
 	case CommandTypeSubmitAnswer:
 		var answer core.Answer
@@ -171,6 +280,11 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			case f.EventCh <- Event{Type: EventTaskUpdated, Data: existing}:
 			default:
 			}
+
+			// Notify Subscribers
+			key := KeyPrefixTask + ":" + existing.ID
+			ver := f.incrementVersion(key)
+			f.notifySubscribers(key, existing, ver)
 		}
 	case CommandTypeSubmitVote:
 		var vote core.Vote
@@ -197,6 +311,11 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			return fmt.Errorf("failed to unmarshal metadata: %w", err)
 		}
 		f.Metadata.Store(meta.ID, meta)
+
+		// Notify Subscribers
+		key := KeyPrefixMetadata + ":" + meta.ID
+		ver := f.incrementVersion(key)
+		f.notifySubscribers(key, &meta, ver)
 	}
 	return nil
 }
@@ -220,10 +339,18 @@ func (f *SyncMapFSM) Snapshot() (raft.FSMSnapshot, error) {
 
 	// Copy answers/votes if needed, skipped for brevity in this step but should be here
 
+	// Copy KeyVersions
+	keyVersions := make(map[string]uint64)
+	f.KeyVersions.Range(func(key, value interface{}) bool {
+		keyVersions[key.(string)] = value.(uint64)
+		return true
+	})
+
 	return &Snapshot{
 		Reputations: reputations,
 		Metadata:    metadata,
 		Tasks:       tasks,
+		KeyVersions: keyVersions,
 	}, nil
 }
 
@@ -259,6 +386,12 @@ func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
 	// Also need to handle TaskAnswers/Votes if we were persisting them
 	f.TaskAnswers = make(map[string][]core.Answer)
 	f.TaskVotes = make(map[string]map[string]core.Vote)
+
+	// Restore KeyVersions
+	f.KeyVersions = sync.Map{}
+	for k, v := range snapshot.KeyVersions {
+		f.KeyVersions.Store(k, v)
+	}
 
 	return nil
 }

@@ -7,16 +7,6 @@ import (
 	"github.com/hashicorp/raft"
 )
 
-type FSM interface {
-	EventsConsumer() chan Event
-	GetTask(id string) (*core.Task, error)
-	GetTaskAnswers(id string) ([]core.Answer, error)
-	GetTaskVotes(id string) (map[string]core.Vote, error)
-	GetReputation(id string) int
-	GetAllReputations() map[string]int
-	GetMetadata(id string) *core.AgentMetadata
-}
-
 // Helper types for Logs and Snapshots
 
 type CommandType string
@@ -30,6 +20,29 @@ const (
 	CommandTypeUpdateMetadata   CommandType = "update_metadata"
 )
 
+const (
+	KeyPrefixTask       = "task"
+	KeyPrefixReputation = "reputation"
+	KeyPrefixMetadata   = "metadata"
+)
+
+type KVEntry struct {
+	Key     string
+	Value   interface{}
+	Version uint64
+}
+
+type FSM interface {
+	EventsConsumer() chan Event
+	GetTask(id string) (*core.Task, error)
+	GetTaskAnswers(id string) ([]core.Answer, error)
+	GetTaskVotes(id string) (map[string]core.Vote, error)
+	GetReputation(id string) int
+	GetAllReputations() map[string]int
+	GetMetadata(id string) *core.AgentMetadata
+	Subscribe(prefix string, id string, version uint64) <-chan KVEntry
+}
+
 type LogCommand struct {
 	Type    CommandType     `json:"type"`
 	AgentID string          `json:"agent_id,omitempty"`
@@ -40,6 +53,7 @@ type Snapshot struct {
 	Reputations map[string]int
 	Metadata    map[string]core.AgentMetadata
 	Tasks       map[string]*core.Task
+	KeyVersions map[string]uint64
 }
 
 func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
@@ -66,4 +80,5 @@ type SnapshotData struct {
 	Reputations map[string]int                `json:"reputations"`
 	Metadata    map[string]core.AgentMetadata `json:"metadata"`
 	Tasks       map[string]*core.Task         `json:"tasks"`
+	KeyVersions map[string]uint64             `json:"key_versions"`
 }
