@@ -565,6 +565,8 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 }
 
 func (e *Engine) applyReputationUpdate(agentID string, newRep int) {
+	newRep = max(newRep, 0)
+	newRep = min(newRep, 100)
 	repBytes, _ := json.Marshal(newRep)
 	cmd := fsm.LogCommand{
 		Type:    fsm.CommandTypeUpdateReputation,

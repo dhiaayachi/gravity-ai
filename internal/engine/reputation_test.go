@@ -51,16 +51,16 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// 3. Verify Reputations
-	// Leader: 100 + 10 = 110
+	// Leader: 100 + 10 = 110 -> Clamped to 100
 	lRep := h.fsm.GetReputation(leaderID)
-	if lRep != 110 {
-		t.Errorf("Expected Leader Rep 110, got %d", lRep)
+	if lRep != 100 {
+		t.Errorf("Expected Leader Rep 100 (clamped), got %d", lRep)
 	}
 
-	// Worker1: Agreed (Accepted=True, Result=Done). 100 + 1 = 101
+	// Worker1: Agreed (Accepted=True, Result=Done). 100 + 1 = 101 -> Clamped to 100
 	w1Rep := h.fsm.GetReputation(worker1)
-	if w1Rep != 101 {
-		t.Errorf("Expected Worker1 Rep 101, got %d", w1Rep)
+	if w1Rep != 100 {
+		t.Errorf("Expected Worker1 Rep 100 (clamped), got %d", w1Rep)
 	}
 
 	// Worker2: Disagreed (Accepted=False, Result=Done). 90 - 1 = 89
@@ -75,28 +75,58 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	}
 
 	// 5. Trigger Transfer Scenario
-	// Manually set Worker2 to 200 (Higher than Leader 110)
-	h.fsm.Reputations.Store(worker2, 200)
+	// To trigger transfer, we need someone > Leader.
+	// Leader is at 100 (max).
+	// We must lower Leader reputation to allow transfer, OR effectively we can't transfer if everyone is max.
+	// Let's degrade Leader first with a Failed task.
 
-	// Run check manually or via another task?
-	// The check happens in runFinalizeTask. Let's run another task.
+	taskFail := &core.Task{ID: "tFail", Status: core.TaskStatusProposal, Result: "fail"}
+	h.fsm.Tasks["tFail"] = taskFail
+	// Leader "fails" -> -10 -> 90.
+	// Worker2 (at 89 from before) Votes Rejected (Correct for Failed) -> +1 -> 90.
+	// Worker1 (at 100) Votes Accepted (Wrong) -> -1 -> 99.
+
+	// Wait, we want Worker2 to be > Leader.
+	// If Leader -> 90.
+	// Worker2 manually set to 95?
+
+	// Let's manually degrade Leader to 90.
+	h.fsm.Reputations.Store(leaderID, 90)
+
+	// Set Worker2 to 100 (Max)
+	h.fsm.Reputations.Store(worker2, 100)
+
+	// Run a task that keeps status quo or just use empty check?
+	// The check runs in runFinalizeTask.
+	// Let's run a neutral task where Leader gains +10 back? No then Leader is 100.
+	// We want Leader to stay < Worker2.
+	// If we run a successful task: Leader +10 -> 100. Worker2 (Agrees) +1 -> 100 (capped).
+	// Then Leader == Worker2. No transfer.
+
+	// If we run a FAILED task (Consensus Rejected):
+	// Leader -10 -> 80.
+	// Worker2 (Agrees / Rejects properly) -> +1 -> 100 (capped).
+	// Then Worker2 (100) > Leader (80). Transfer!
+
 	task2 := &core.Task{ID: "t2", Status: core.TaskStatusProposal, Result: "res2"}
 	h.fsm.Tasks["t2"] = task2
-	h.fsm.TaskVotes["t2"] = votes // Same votes
 
-	// 6. Leadership Transfer (Using MockClusterState)
-	// AddVoter not needed because we use GetPeerAddress via ClusterState mock
+	// Votes:
+	// Leader & Worker2 Reject -> Consensus Rejected (Majority).
+	// Worker1 Accepts (Incorrect).
+	votesRefused := map[string]core.Vote{
+		leaderID: {AgentID: leaderID, Accepted: false},
+		worker1:  {AgentID: worker1, Accepted: true},
+		worker2:  {AgentID: worker2, Accepted: false},
+	}
+	h.fsm.TaskVotes["t2"] = votesRefused
 
 	h.engine.runFinalizeTask(task2)
 	time.Sleep(200 * time.Millisecond)
 
-	// Now Leader should see Worker2 (200) > Self.
-	// Should transfer to Worker2.
-
-	// Note: runFinalizeTask might have updated Reputations again.
-	// Leader: 110 + 10 = 120.
-	// Worker2: 200 - 1 = 199.
-	// 199 > 120. Transfer YES.
+	// Leader: 90 - 10 = 80.
+	// Worker2: 100 + 1 = 101 -> 100.
+	// Transfer should happen.
 
 	h.cluster.mu.Lock()
 	target := h.cluster.transferTarget
