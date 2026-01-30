@@ -30,6 +30,5 @@ Thumbs.db
 # Project specific
 /data/
 *.bolt
-gravity-ai
+./gravity-ai
 coverage.out
-./agent
