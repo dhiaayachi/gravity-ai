@@ -23,7 +23,7 @@ func NewClient(localAddr string) *Client {
 // Ensure Client implements engine.ClusterClient
 var _ engine.ClusterClient = (*Client)(nil)
 
-func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error {
+func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string, round int) error {
 
 	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -40,6 +40,7 @@ func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepte
 		Accepted:  accepted,
 		Reasoning: reasoning,
 		Rebuttal:  rebuttal,
+		Round:     int32(round),
 	}
 
 	resp, err := client.SubmitVote(ctx, req)

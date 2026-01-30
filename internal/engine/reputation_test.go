@@ -27,7 +27,7 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	h.fsm.Reputations.Store(worker1, 100)
 	h.fsm.Reputations.Store(worker2, 90)
 
-	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Result: "res"}
+	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Result: "res", Round: 1}
 	h.fsm.Tasks["t1"] = task
 
 	// Votes:
@@ -35,10 +35,12 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	// Worker1: Accepted
 	// Worker2: Rejected
 
-	votes := map[string]core.Vote{
-		leaderID: {AgentID: leaderID, Accepted: true},
-		worker1:  {AgentID: worker1, Accepted: true},
-		worker2:  {AgentID: worker2, Accepted: false},
+	votes := map[int]map[string]core.Vote{
+		1: {
+			leaderID: {AgentID: leaderID, Accepted: true, Round: 1},
+			worker1:  {AgentID: worker1, Accepted: true, Round: 1},
+			worker2:  {AgentID: worker2, Accepted: false, Round: 1},
+		},
 	}
 	h.fsm.TaskVotes["t1"] = votes
 
@@ -90,7 +92,7 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	// We must lower Leader reputation to allow transfer, OR effectively we can't transfer if everyone is max.
 	// Let's degrade Leader first with a Failed task.
 
-	taskFail := &core.Task{ID: "tFail", Status: core.TaskStatusProposal, Result: "fail"}
+	taskFail := &core.Task{ID: "tFail", Status: core.TaskStatusProposal, Result: "fail", Round: 1}
 	h.fsm.Tasks["tFail"] = taskFail
 	// Leader "fails" -> -10 -> 90.
 	// Worker2 (at 89 from before) Votes Rejected (Correct for Failed) -> +1 -> 90.
@@ -118,16 +120,18 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	// Worker2 (Agrees / Rejects properly) -> +1 -> 100 (capped).
 	// Then Worker2 (100) > Leader (80). Transfer!
 
-	task2 := &core.Task{ID: "t2", Status: core.TaskStatusProposal, Result: "res2"}
+	task2 := &core.Task{ID: "t2", Status: core.TaskStatusProposal, Result: "res2", Round: 1}
 	h.fsm.Tasks["t2"] = task2
 
 	// Votes:
 	// Leader & Worker2 Reject -> Consensus Rejected (Majority).
 	// Worker1 Accepts (Incorrect).
-	votesRefused := map[string]core.Vote{
-		leaderID: {AgentID: leaderID, Accepted: false},
-		worker1:  {AgentID: worker1, Accepted: true},
-		worker2:  {AgentID: worker2, Accepted: false},
+	votesRefused := map[int]map[string]core.Vote{
+		1: {
+			leaderID: {AgentID: leaderID, Accepted: false, Round: 1},
+			worker1:  {AgentID: worker1, Accepted: true, Round: 1},
+			worker2:  {AgentID: worker2, Accepted: false, Round: 1},
+		},
 	}
 	h.fsm.TaskVotes["t2"] = votesRefused
 

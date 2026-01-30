@@ -14,11 +14,11 @@ import (
 // SyncMapFSM is the state machine for the Raft system
 type SyncMapFSM struct {
 	NodeID      string
-	Reputations sync.Map                        // AgentID -> int
-	Metadata    sync.Map                        // AgentID -> core.AgentMetadata
-	Tasks       map[string]*core.Task           // TaskID -> *core.Task
-	TaskAnswers map[string][]core.Answer        // TaskID -> []core.Answer
-	TaskVotes   map[string]map[string]core.Vote // TaskID -> []core.Vote
+	Reputations sync.Map                                // AgentID -> int
+	Metadata    sync.Map                                // AgentID -> core.AgentMetadata
+	Tasks       map[string]*core.Task                   // TaskID -> *core.Task
+	TaskAnswers map[string][]core.Answer                // TaskID -> []core.Answer
+	TaskVotes   map[string]map[int]map[string]core.Vote // TaskID -> Round -> AgentID -> Vote
 
 	KeyVersions sync.Map                  // string (Key) -> uint64
 	Subscribers map[string][]chan KVEntry // Key -> []chan KVEntry
@@ -38,14 +38,19 @@ func (f *SyncMapFSM) GetTaskAnswers(id string) ([]core.Answer, error) {
 	return val, nil
 }
 
-func (f *SyncMapFSM) GetTaskVotes(id string) (map[string]core.Vote, error) {
+func (f *SyncMapFSM) GetTaskVotes(id string, round int) (map[string]core.Vote, error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
-	val, ok := f.TaskVotes[id]
+	rounds, ok := f.TaskVotes[id]
 	if !ok {
-		return nil, fmt.Errorf("task Answers not found: %s", id)
+		return nil, fmt.Errorf("task votes not found for task: %s", id)
 	}
-	return val, nil
+	votes, ok := rounds[round]
+	if !ok {
+		// No votes for this round yet, return empty map instead of error to simplify logic
+		return make(map[string]core.Vote), nil
+	}
+	return votes, nil
 }
 
 func (f *SyncMapFSM) GetReputation(id string) int {
@@ -108,7 +113,7 @@ func NewSyncMapFSM(nodeID string) *SyncMapFSM {
 		EventCh:     make(chan Event, 100),
 		Tasks:       make(map[string]*core.Task),
 		TaskAnswers: make(map[string][]core.Answer),
-		TaskVotes:   make(map[string]map[string]core.Vote),
+		TaskVotes:   make(map[string]map[int]map[string]core.Vote),
 		Subscribers: make(map[string][]chan KVEntry),
 	}
 }
@@ -175,7 +180,7 @@ func (f *SyncMapFSM) notifySubscribers(key string, value interface{}, version ui
 			// Ideally we don't block Apply.
 			log.Printf("Warning: Subscriber channel full for key %s", key)
 		}
-		//close(ch)
+		close(ch)
 	}
 
 	// Remove subscribers for this key (one-shot)
@@ -294,6 +299,8 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 			existing.Status = task.Status
 			existing.Result = task.Result
 			existing.ConfidenceScore = task.ConfidenceScore
+			existing.Round = task.Round
+			existing.Proposals = task.Proposals
 
 			// Notify
 			select {
@@ -311,11 +318,18 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		if err := json.Unmarshal(cmd.Value, &vote); err != nil {
 			return fmt.Errorf("failed to unmarshal vote: %w", err)
 		}
-		votes, ok := f.TaskVotes[vote.TaskID]
-		if !ok {
-			f.TaskVotes[vote.TaskID] = make(map[string]core.Vote)
-			votes = f.TaskVotes[vote.TaskID]
+
+		// Initialize task maps if needed
+		if _, ok := f.TaskVotes[vote.TaskID]; !ok {
+			f.TaskVotes[vote.TaskID] = make(map[int]map[string]core.Vote)
 		}
+
+		// Initialize round map if needed
+		if _, ok := f.TaskVotes[vote.TaskID][vote.Round]; !ok {
+			f.TaskVotes[vote.TaskID][vote.Round] = make(map[string]core.Vote)
+		}
+
+		votes := f.TaskVotes[vote.TaskID][vote.Round]
 		if _, ok := votes[vote.AgentID]; !ok {
 			votes[vote.AgentID] = vote
 			// Notify
@@ -405,7 +419,7 @@ func (f *SyncMapFSM) Restore(rc io.ReadCloser) error {
 
 	// Also need to handle TaskAnswers/Votes if we were persisting them
 	f.TaskAnswers = make(map[string][]core.Answer)
-	f.TaskVotes = make(map[string]map[string]core.Vote)
+	f.TaskVotes = make(map[string]map[int]map[string]core.Vote)
 
 	// Restore KeyVersions
 	f.KeyVersions = sync.Map{}

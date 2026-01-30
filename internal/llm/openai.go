@@ -99,3 +99,11 @@ func (c *OpenAIClient) Aggregate(taskContent string, answers []string) (string, 
 	prompt += aggregatePrompt
 	return c.Generate(prompt)
 }
+
+func (c *OpenAIClient) Revise(taskContent string, proposal string, feedback []string) (string, error) {
+	prompt := fmt.Sprintf(revisePrompt, taskContent, proposal, "")
+	for i, f := range feedback {
+		prompt += fmt.Sprintf("- %d: %s\n", i+1, f)
+	}
+	return c.Generate(prompt)
+}

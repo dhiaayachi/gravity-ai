@@ -36,7 +36,7 @@ type FSM interface {
 	EventsConsumer() chan Event
 	GetTask(id string) (*core.Task, error)
 	GetTaskAnswers(id string) ([]core.Answer, error)
-	GetTaskVotes(id string) (map[string]core.Vote, error)
+	GetTaskVotes(id string, round int) (map[string]core.Vote, error)
 	GetReputation(id string) int
 	GetAllReputations() map[string]int
 	GetMetadata(id string) *core.AgentMetadata

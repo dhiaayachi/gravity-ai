@@ -43,6 +43,10 @@ type Engine struct {
 	ProposalTimeout time.Duration
 	VoteTimeout     time.Duration
 
+	// Multi-round config
+	TargetConsensus int // Number of accepted votes required to pass immediately
+	MaxRounds       int // Maximum number of voting rounds
+
 	logger *zap.Logger
 
 	// Agent State
@@ -52,7 +56,7 @@ type Engine struct {
 
 // ClusterClient defines the interface for communicating with other agents
 type ClusterClient interface {
-	SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error
+	SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string, round int) error
 	SubmitAnswer(ctx context.Context, taskID, agentID string, content string) error
 	UpdateMetadata(ctx context.Context, agentID, provider, model string) error
 }
@@ -67,6 +71,8 @@ func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient Clust
 		timerCh:         make(chan string, 100),
 		ProposalTimeout: 60 * time.Second,
 		VoteTimeout:     60 * time.Second,
+		TargetConsensus: 3, // Default to majority of 3 if not set, but better dynamic? Let's default to 2.
+		MaxRounds:       10,
 		clusterClient:   clusterClient,
 		taskNotifier:    notifier,
 		logger:          logger.With(zap.String("component", "engine")),
@@ -179,8 +185,9 @@ func (e *Engine) handleRaftEvent(event fsm.Event) {
 		case core.TaskStatusDone, core.TaskStatusFailed:
 			e.notifyTaskCompletion(task)
 		case core.TaskStatusProposal:
-			// All nodes vote
-			err = e.runVotePhase(task)
+			// All nodes vote - make a copy to avoid race with FSM updates
+			taskCopy := *task
+			go e.runVotePhase(&taskCopy)
 		}
 	case fsm.EventVoteSubmitted:
 		if e.clusterState.IsLeader() {
@@ -359,6 +366,8 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) error {
 	// Update Task to Proposal status
 	task.Status = core.TaskStatusProposal
 	task.Result = proposalContent
+	task.Round = 1 // Start at round 1
+	task.Proposals = map[int]string{1: proposalContent}
 
 	taskBytes, _ := json.Marshal(task)
 	cmd := fsm.LogCommand{
@@ -401,6 +410,7 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 			Accepted:  isValid,
 			Reasoning: reasoning,
 			Rebuttal:  rebuttal,
+			Round:     task.Round,
 		}
 
 		voteBytes, _ := json.Marshal(vote)
@@ -425,7 +435,7 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := e.clusterClient.SubmitVote(ctx, task.ID, e.nodeConfig.ID, isValid, reasoning, rebuttal); err != nil {
+	if err := e.clusterClient.SubmitVote(ctx, task.ID, e.nodeConfig.ID, isValid, reasoning, rebuttal, task.Round); err != nil {
 		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
 	return nil
@@ -444,7 +454,7 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 		return fmt.Errorf("task already finished")
 	}
 
-	votes, err := e.fsm.GetTaskVotes(task.ID)
+	votes, err := e.fsm.GetTaskVotes(task.ID, task.Round)
 	if err != nil {
 		e.logger.Error("Failed to get task votes", zap.Error(err), zap.String("task_id", task.ID))
 		return fmt.Errorf("failed to get task votes: %w", err)
@@ -481,16 +491,179 @@ func (e *Engine) runFinalizeTask(task *core.Task) error {
 
 	var finalStatus core.TaskStatus
 
-	if accepted >= quorum {
+	// Simple majority quorum for "deadlock" check, but we use TargetConsensus for "Success"
+	// Actually, logic:
+	// If Accepted >= TargetConsensus -> Done
+	// If Rejected >= Quorum -> Try Revision or Fail
+
+	target := e.TargetConsensus
+	if target < quorum {
+		target = quorum
+	}
+
+	if accepted >= target {
 		e.logger.Info("Consensus reached: Accepted", zap.String("task_id", task.ID), zap.String("result", task.Result))
 		finalStatus = core.TaskStatusDone
 	} else if rejected >= quorum {
+		// Consensus against the proposal
 		e.logger.Info("Consensus reached: REJECTED", zap.String("task_id", task.ID), zap.String("result", task.Result))
-		finalStatus = core.TaskStatusFailed
+
+		// Try Revision
+		if task.Round < e.MaxRounds {
+			e.logger.Info("Attempting revision", zap.String("task_id", task.ID), zap.Int("round", task.Round))
+
+			// Collect Rebuttals
+			var rebuttals []string
+			for _, v := range votes {
+				if !v.Accepted && v.Rebuttal != "" {
+					rebuttals = append(rebuttals, v.Rebuttal)
+				}
+				// Also include reasoning if rebuttal empty?
+				if !v.Accepted && v.Reasoning != "" {
+					rebuttals = append(rebuttals, v.Reasoning)
+				}
+			}
+
+			newProposal, err := e.llm.Revise(task.Content, task.Result, rebuttals)
+			if err != nil {
+				e.logger.Error("LLM revision failed", zap.Error(err))
+				// Fall through to failure? Or retry? For now, fall through to failure logic or just fail revision and keep same status?
+				// Just fail the task if revision fails.
+				finalStatus = core.TaskStatusFailed
+			} else {
+				// Update Task with new proposal and increment round
+				updatedTask := *task
+				updatedTask.Round++
+				updatedTask.Result = newProposal
+				updatedTask.Status = core.TaskStatusProposal
+				if updatedTask.Proposals == nil {
+					updatedTask.Proposals = make(map[int]string)
+				}
+				updatedTask.Proposals[updatedTask.Round] = newProposal
+
+				taskBytes, _ := json.Marshal(updatedTask)
+				cmd := fsm.LogCommand{
+					Type:  fsm.CommandTypeUpdateTask,
+					Value: taskBytes,
+				}
+				b, _ := json.Marshal(cmd)
+				if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+					return f.Error()
+				}
+				// Start Vote Timer again?
+				// The update task event will trigger "runVotePhase" again for everyone.
+				// But we need to reset the timer for *finalization*.
+				// Actually Engine.handleRaftEvent -> EventTaskUpdated -> runVotePhase.
+				// So we don't need to do anything here except return.
+				return nil
+			}
+
+		} else {
+			// Max Rounds Reached. Check for best candidate fallback.
+			// Re-checking all rounds is complex without access to historical vote data easily.
+			// But we only have GetTaskVotes(round).
+
+			var bestRound int
+			var maxAccepted int
+			found := false
+
+			for r := 1; r <= task.Round; r++ {
+				// We need to fetch votes for previous rounds.
+				// CAUTION: This might be expensive or racy if not careful, but we are in Finalize loop.
+				rVotes, err := e.fsm.GetTaskVotes(task.ID, r)
+				if err != nil {
+					continue
+				}
+				rAccepted := 0
+				for _, v := range rVotes {
+					if v.Accepted {
+						rAccepted++
+					}
+				}
+
+				if rAccepted >= quorum {
+					if rAccepted > maxAccepted || (rAccepted == maxAccepted && r > bestRound) { // Prefer later rounds on tie?
+						maxAccepted = rAccepted
+						bestRound = r
+						found = true
+					}
+				}
+			}
+
+			if found {
+				e.logger.Info("Max rounds reached, falling back to best round", zap.Int("best_round", bestRound))
+
+				// Revert to best round
+				task.Round = bestRound
+				task.Result = task.Proposals[bestRound]
+				finalStatus = core.TaskStatusDone
+			} else {
+				finalStatus = core.TaskStatusFailed
+			}
+		}
 	} else {
-		e.logger.Info("No consensus reached, yet", zap.String("task_id", task.ID), zap.String("result", task.Result), zap.Int("quorum", quorum), zap.Int("rejected", rejected), zap.Int("accepted", accepted))
-		// No consensus yet
-		return nil
+		// Check if all agents have voted
+		totalVotes := accepted + rejected
+		if totalVotes >= serverCount {
+			// All votes are in but no clear consensus - attempt revision
+			e.logger.Info("All votes received but no consensus, attempting revision",
+				zap.String("task_id", task.ID),
+				zap.Int("accepted", accepted),
+				zap.Int("rejected", rejected),
+				zap.Int("round", task.Round))
+
+			if task.Round < e.MaxRounds {
+				var rebuttals []string
+				for _, v := range votes {
+					if !v.Accepted && v.Rebuttal != "" {
+						rebuttals = append(rebuttals, v.Rebuttal)
+					} else if !v.Accepted && v.Reasoning != "" {
+						rebuttals = append(rebuttals, v.Reasoning)
+					}
+				}
+
+				revised, err := e.llm.Revise(task.Content, task.Result, rebuttals)
+				if err != nil {
+					e.logger.Error("Failed to revise proposal", zap.Error(err))
+					finalStatus = core.TaskStatusFailed
+				} else {
+					// Update Task with new proposal and increment round via Raft
+					updatedTask := *task
+					updatedTask.Round++
+					updatedTask.Result = revised
+					updatedTask.Status = core.TaskStatusProposal
+					if updatedTask.Proposals == nil {
+						updatedTask.Proposals = make(map[int]string)
+					}
+					updatedTask.Proposals[updatedTask.Round] = revised
+
+					taskBytes, _ := json.Marshal(updatedTask)
+					cmd := fsm.LogCommand{
+						Type:  fsm.CommandTypeUpdateTask,
+						Value: taskBytes,
+					}
+					b, _ := json.Marshal(cmd)
+					if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
+						e.logger.Error("Failed to apply revision to Raft", zap.Error(f.Error()))
+						return f.Error()
+					}
+					// The task update event will trigger runVotePhase on all nodes
+					return nil
+				}
+			} else {
+				// Max rounds reached - fallback to best round or accept if majority
+				e.logger.Warn("Max rounds reached, applying fallback", zap.Int("accepted", accepted), zap.Int("rejected", rejected))
+				if accepted > rejected {
+					finalStatus = core.TaskStatusDone
+				} else {
+					finalStatus = core.TaskStatusFailed
+				}
+			}
+		} else {
+			e.logger.Info("No consensus reached, yet", zap.String("task_id", task.ID), zap.String("result", task.Result), zap.Int("quorum", quorum), zap.Int("rejected", rejected), zap.Int("accepted", accepted))
+			// Not all votes in yet
+			return nil
+		}
 	}
 
 	// 1. Calculate Confidence Score

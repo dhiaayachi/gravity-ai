@@ -103,6 +103,7 @@ func TestFSM_Apply(t *testing.T) {
 		TaskID:   "task1",
 		AgentID:  "agentA",
 		Accepted: true,
+		Round:    1,
 	}
 	voteBytes, _ := json.Marshal(vote)
 	voteCmd := LogCommand{
@@ -116,7 +117,7 @@ func TestFSM_Apply(t *testing.T) {
 		t.Errorf("Votes not found")
 	} else {
 		votes := val
-		if len(votes) != 1 || !votes["agentA"].Accepted {
+		if len(votes) != 1 || !votes[1]["agentA"].Accepted {
 			t.Errorf("Vote content mismatch")
 		}
 	}
@@ -126,6 +127,7 @@ func TestFSM_Apply(t *testing.T) {
 		TaskID:   "task1",
 		AgentID:  "agentA",
 		Accepted: false,
+		Round:    1,
 	}
 	vote2Bytes, _ := json.Marshal(vote2)
 	voteCmd2 := LogCommand{
@@ -139,7 +141,7 @@ func TestFSM_Apply(t *testing.T) {
 		t.Errorf("Votes not found after update")
 	} else {
 		votes := val
-		if len(votes) != 1 || !votes["agentA"].Accepted { // Should be false now
+		if len(votes) != 1 || !votes[1]["agentA"].Accepted { // Should be false now
 			t.Errorf("Vote not updated correctly")
 		}
 	}

@@ -36,6 +36,13 @@ func (m *MockLLM) Aggregate(_ string, _ []string) (string, error) {
 	return "Aggregated Answer", nil
 }
 
+func (m *MockLLM) Revise(taskContent string, proposal string, feedback []string) (string, error) {
+	if !m.Healthy {
+		return "", errors.New("llm unhealthy")
+	}
+	return "Mock Revision", nil
+}
+
 // YesMock always approves
 type YesMock struct {
 	MockLLM
@@ -48,6 +55,10 @@ func NewYesMock() llm.Client {
 			ValidationLogic: func(t, p string) bool { return true },
 		},
 	}
+}
+
+func (m *YesMock) Revise(taskContent string, proposal string, feedback []string) (string, error) {
+	return "Revised: " + proposal, nil
 }
 
 // NoMock always rejects

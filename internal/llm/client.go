@@ -7,6 +7,7 @@ type Client interface {
 	Generate(prompt string) (string, error)
 	Validate(taskContent string, proposal string) (valid bool, reasoning string, err error)
 	Aggregate(taskContent string, answers []string) (string, error)
+	Revise(taskContent string, proposal string, feedback []string) (string, error)
 }
 
 // cleanJSONMarkdown removes Markdown code block formatting for JSON
@@ -22,6 +23,20 @@ const aggregatePrompt = "\nAggregate these answers into a single, high-quality r
 const validatePrompt = `Task: %s
 Proposal: %s
 
+History
+
 Does the proposal accurately and correctly answer the task? If you find any flaw in the answer it's not valid
 Respond with JSON object: {"valid": boolean, "reason": string}.
+`
+
+const revisePrompt = `
+You are an expert reviser.
+Original Task: 
+%s
+Original Proposals: 
+%s
+Feedback from peers:
+%s
+
+Please revise the proposal to address the feedback. Keep it concise.
 `

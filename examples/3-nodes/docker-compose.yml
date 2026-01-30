@@ -14,12 +14,12 @@ services:
       - GRAVITY_DATA_DIR=/data
       - GRAVITY_BOOTSTRAP=true
       - GRAVITY_PEERS=node2=node2:8000, node3=node3:8000
-      - GRAVITY_LLM_PROVIDER=gemini
-      - GRAVITY_LLM_MODEL=gemini-flash-latest
-      - GRAVITY_API_KEY=${GEMINI_API_KEY}
-      # - GRAVITY_LLM_PROVIDER=ollama
-      # - GRAVITY_LLM_MODEL=gpt-oss:latest
-      # - GRAVITY_OLLAMA_URL=http://host.docker.internal:11434
+      - GRAVITY_LLM_PROVIDER=ollama
+      - GRAVITY_LLM_MODEL=llama3:8b
+      - GRAVITY_OLLAMA_URL=http://host.docker.internal:11434
+      #      - GRAVITY_LLM_PROVIDER=gemini
+      #      - GRAVITY_LLM_MODEL=gemini-flash-latest
+      #      - GRAVITY_API_KEY=${GEMINI_API_KEY}
     ports:
       - "8080:8080"
     volumes:
@@ -59,12 +59,12 @@ services:
       - GRAVITY_DATA_DIR=/data
       - GRAVITY_BOOTSTRAP=false
       - GRAVITY_PEERS=node1=node1:8000, node2=node2:8000
-      - GRAVITY_LLM_PROVIDER=gemini
-      - GRAVITY_LLM_MODEL=gemini-flash-latest
-      - GRAVITY_API_KEY=${GEMINI_API_KEY}
-      # - GRAVITY_LLM_PROVIDER=ollama
-      # - GRAVITY_LLM_MODEL=qwen3:8b
-      # - GRAVITY_OLLAMA_URL=http://host.docker.internal:11434
+      - GRAVITY_LLM_PROVIDER=ollama
+      - GRAVITY_LLM_MODEL=llama3:8b
+      - GRAVITY_OLLAMA_URL=http://host.docker.internal:11434
+#      - GRAVITY_LLM_PROVIDER=gemini
+#      - GRAVITY_LLM_MODEL=gemini-flash-latest
+#      - GRAVITY_API_KEY=${GEMINI_API_KEY}
     volumes:
       - node3-data:/data
 

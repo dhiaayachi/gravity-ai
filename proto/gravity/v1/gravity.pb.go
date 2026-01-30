@@ -124,6 +124,7 @@ type SubmitVoteRequest struct {
 	Accepted      bool                   `protobuf:"varint,3,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	Reasoning     string                 `protobuf:"bytes,4,opt,name=reasoning,proto3" json:"reasoning,omitempty"` // Why the agent voted this way
 	Rebuttal      string                 `protobuf:"bytes,5,opt,name=rebuttal,proto3" json:"rebuttal,omitempty"`   // Counter-proposal if rejected
+	Round         int32                  `protobuf:"varint,6,opt,name=round,proto3" json:"round,omitempty"`        // Voting round number
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -191,6 +192,13 @@ func (x *SubmitVoteRequest) GetRebuttal() string {
 		return x.Rebuttal
 	}
 	return ""
+}
+
+func (x *SubmitVoteRequest) GetRound() int32 {
+	if x != nil {
+		return x.Round
+	}
+	return 0
 }
 
 type SubmitVoteResponse struct {
@@ -479,13 +487,14 @@ const file_proto_gravity_v1_gravity_proto_rawDesc = "" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12\x1c\n" +
 	"\trequester\x18\x02 \x01(\tR\trequester\"-\n" +
 	"\x12SubmitTaskResponse\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\x9d\x01\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\xb3\x01\n" +
 	"\x11SubmitVoteRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
 	"\baccepted\x18\x03 \x01(\bR\baccepted\x12\x1c\n" +
 	"\treasoning\x18\x04 \x01(\tR\treasoning\x12\x1a\n" +
-	"\brebuttal\x18\x05 \x01(\tR\brebuttal\"H\n" +
+	"\brebuttal\x18\x05 \x01(\tR\brebuttal\x12\x14\n" +
+	"\x05round\x18\x06 \x01(\x05R\x05round\"H\n" +
 	"\x12SubmitVoteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"c\n" +

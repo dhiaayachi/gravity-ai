@@ -114,7 +114,7 @@ func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb
 	}
 
 	s.logger.Debug("Processing vote")
-	err := s.service.SubmitVote(req.TaskId, req.AgentId, req.Accepted, req.Reasoning, req.Rebuttal)
+	err := s.service.SubmitVote(req.TaskId, req.AgentId, req.Accepted, req.Reasoning, req.Rebuttal, int(req.Round))
 	if err != nil {
 		return &pb.SubmitVoteResponse{Success: false, Message: err.Error()}, nil
 	}

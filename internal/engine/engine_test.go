@@ -99,6 +99,10 @@ func (m *mockLLM) Aggregate(_ string, _ []string) (string, error) {
 	return "Aggregated: " + m.genResp, nil
 }
 
+func (m *mockLLM) Revise(taskContent string, proposal string, feedback []string) (string, error) {
+	return "Revised: " + proposal, nil
+}
+
 type mockClusterClient struct {
 	mu           sync.Mutex
 	voted        bool
@@ -108,7 +112,7 @@ type mockClusterClient struct {
 	answer       string
 }
 
-func (m *mockClusterClient) SubmitVote(_ context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error {
+func (m *mockClusterClient) SubmitVote(_ context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string, round int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
@@ -364,14 +368,16 @@ func TestFlow_Vote(t *testing.T) {
 
 func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
-	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
+	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Round: 1}
 	h.fsm.Tasks["t1"] = task // Must match in SyncMapFSM
 
 	// Stores votes: 2/3 accepted
-	votes := map[string]core.Vote{
-		"1": {AgentID: "1", Accepted: true},
-		"2": {AgentID: "2", Accepted: true},
-		"3": {AgentID: "3", Accepted: false},
+	votes := map[int]map[string]core.Vote{
+		1: {
+			"1": {AgentID: "1", Accepted: true, Round: 1},
+			"2": {AgentID: "2", Accepted: true, Round: 1},
+			"3": {AgentID: "3", Accepted: false, Round: 1},
+		},
 	}
 	h.fsm.TaskVotes["t1"] = votes
 
@@ -392,13 +398,15 @@ func TestFlow_Leader_Finalize_Consensus(t *testing.T) {
 
 func TestFlow_Leader_Finalize_Rejected(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
-	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
+	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Round: 1}
 	h.fsm.Tasks["t1"] = task
 
-	votes := map[string]core.Vote{
-		"1": {AgentID: "1", Accepted: false},
-		"2": {AgentID: "2", Accepted: false},
-		"3": {AgentID: "3", Accepted: true},
+	votes := map[int]map[string]core.Vote{
+		1: {
+			"1": {AgentID: "1", Accepted: false, Round: 1},
+			"2": {AgentID: "2", Accepted: false, Round: 1},
+			"3": {AgentID: "3", Accepted: true, Round: 1},
+		},
 	}
 	h.fsm.TaskVotes["t1"] = votes
 
@@ -447,12 +455,14 @@ func TestFlow_Leader_Timeout(t *testing.T) {
 
 func TestFlow_Leader_Finalize_NoConsensus(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
-	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal}
+	task := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Round: 1}
 	h.fsm.Tasks["t1"] = task
 
 	// 1/3 voted so far
-	votes := map[string]core.Vote{
-		"1": {AgentID: "1", Accepted: true},
+	votes := map[int]map[string]core.Vote{
+		1: {
+			"1": {AgentID: "1", Accepted: true, Round: 1},
+		},
 	}
 	h.fsm.TaskVotes["t1"] = votes
 
@@ -556,7 +566,7 @@ func TestEngine_Start(t *testing.T) {
 	}
 
 	// 3. TaskUpdated (Proposal) -> Vote
-	taskProp := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Result: "ans"}
+	taskProp := &core.Task{ID: "t1", Status: core.TaskStatusProposal, Result: "ans", Round: 1}
 	h.fsm.EventCh <- fsm2.Event{Type: fsm2.EventTaskUpdated, Data: taskProp}
 
 	time.Sleep(100 * time.Millisecond)
@@ -564,12 +574,14 @@ func TestEngine_Start(t *testing.T) {
 	// (Assumes Apply worked)
 
 	// 4. VoteSubmitted -> Finalize
-	vote := &core.Vote{TaskID: "t1", AgentID: "node2", Accepted: true}
+	vote := &core.Vote{TaskID: "t1", AgentID: "node2", Accepted: true, Round: 1}
 	// Setup consensus
-	h.fsm.TaskVotes["t1"] = map[string]core.Vote{
-		"node1": {AgentID: "node1", Accepted: true},
-		"node2": {AgentID: "node2", Accepted: true},
-		"node3": {AgentID: "node3", Accepted: false},
+	h.fsm.TaskVotes["t1"] = map[int]map[string]core.Vote{
+		1: {
+			"node1": {AgentID: "node1", Accepted: true, Round: 1},
+			"node2": {AgentID: "node2", Accepted: true, Round: 1},
+			"node3": {AgentID: "node3", Accepted: false, Round: 1},
+		},
 	}
 	// Need to ensure task is in SyncMapFSM as Proposal
 	h.fsm.Tasks["t1"] = taskProp

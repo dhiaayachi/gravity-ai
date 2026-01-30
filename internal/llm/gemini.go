@@ -96,3 +96,11 @@ func parseGeminiResponse(resp *genai.GenerateContentResponse) (string, error) {
 	}
 	return "", fmt.Errorf("response content was not text")
 }
+
+func (c *GeminiClient) Revise(taskContent string, proposal string, feedback []string) (string, error) {
+	prompt := fmt.Sprintf(revisePrompt, taskContent, proposal, "")
+	for i, f := range feedback {
+		prompt += fmt.Sprintf("- %d: %s\n", i+1, f)
+	}
+	return c.Generate(prompt)
+}

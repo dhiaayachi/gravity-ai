@@ -24,6 +24,7 @@ message SubmitVoteRequest {
   bool accepted = 3;
   string reasoning = 4; // Why the agent voted this way
   string rebuttal = 5;  // Counter-proposal if rejected
+  int32 round = 6;      // Voting round number
 }
 
 message SubmitVoteResponse {
