@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/grpc"
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )

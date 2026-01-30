@@ -8,12 +8,11 @@ import (
 	"sync"
 	"time"
 
-	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/core"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
-	"github.com/dhiaayachi/gravity-ai/internal/state"
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/state"
 	"go.uber.org/zap"
 )
 
@@ -76,8 +75,8 @@ func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient Clust
 	}
 }
 
-func (e *Engine) GetAgentState() state.AgentState {
-	return state.AgentState{
+func (e *Engine) GetAgentState() clusterstate.AgentState {
+	return clusterstate.AgentState{
 		ID:          e.nodeConfig.ID,
 		RaftState:   e.Node.Raft.State().String(),
 		Reputation:  e.fsm.GetReputation(e.nodeConfig.ID),

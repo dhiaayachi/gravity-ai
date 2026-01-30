@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/config"
-	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
@@ -17,6 +16,7 @@ import (
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/logger"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
 	raftgrpc "github.com/dhiaayachi/raft-grpc-transport"
 	"github.com/spf13/cobra"

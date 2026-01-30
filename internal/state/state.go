@@ -1,11 +1,10 @@
-package clusterstate
+package state
 
 import (
 	"fmt"
 
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
-	"github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/hashicorp/raft"
 )
 
@@ -17,7 +16,16 @@ type ClusterState interface {
 	GetServerCount() (int, error)
 	DropLeader() error
 	TransferLeadership(id string) error
-	GetClusterAgentsState() []state.AgentState
+	GetClusterAgentsState() []AgentState
+}
+
+// AgentState represents the exposed state of the agent
+type AgentState struct {
+	ID          string `json:"id"`
+	RaftState   string `json:"raft_state"`
+	Reputation  int    `json:"reputation"`
+	LLMProvider string `json:"llm_provider"`
+	LLMModel    string `json:"llm_model"`
 }
 
 type DefaultClusterState struct {
@@ -77,13 +85,13 @@ func (d *DefaultClusterState) GetServerCount() (int, error) {
 	return len(cfg.Configuration().Servers), nil
 }
 
-func (d *DefaultClusterState) GetClusterAgentsState() []state.AgentState {
+func (d *DefaultClusterState) GetClusterAgentsState() []AgentState {
 	cfg := d.Node.Raft.GetConfiguration()
 	if err := cfg.Error(); err != nil {
 		return nil
 	}
 
-	var states []state.AgentState
+	var states []AgentState
 
 	for _, srv := range cfg.Configuration().Servers {
 		id := string(srv.ID)
@@ -105,7 +113,7 @@ func (d *DefaultClusterState) GetClusterAgentsState() []state.AgentState {
 		rep := d.fsm.GetReputation(id)
 		meta := d.fsm.GetMetadata(id)
 
-		agentState := state.AgentState{
+		agentState := AgentState{
 			ID:         id,
 			RaftState:  raftState,
 			Reputation: rep,
