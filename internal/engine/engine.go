@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/core"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/dhiaayachi/gravity-ai/internal/state"
-	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +30,7 @@ type Engine struct {
 	nodeConfig *raftInternal.Config // For ID
 
 	clusterClient ClusterClient
-	clusterState  ClusterState
+	clusterState  clusterstate.ClusterState
 
 	// listeners for task completion (TaskID -> chan *core.Task)
 	taskNotifier TaskNotifier
@@ -58,75 +58,13 @@ type ClusterClient interface {
 	UpdateMetadata(ctx context.Context, leaderAddr string, agentID, provider, model string) error
 }
 
-// ClusterState defines the interface for querying cluster status
-type ClusterState interface {
-	IsLeader() bool
-	GetLeaderAddr() string
-	GetFormattedID() string // For logging
-	GetServerCount() (int, error)
-	DropLeader() error
-	TransferLeadership(id string) error
-}
-
-type defaultClusterState struct {
-	Node *raftInternal.AgentNode
-}
-
-func (d *defaultClusterState) IsLeader() bool {
-	return d.Node.Raft.State() == raft.Leader
-}
-
-func (d *defaultClusterState) DropLeader() error {
-	f := d.Node.Raft.LeadershipTransfer()
-	return f.Error()
-}
-
-func (d *defaultClusterState) TransferLeadership(id string) error {
-	address, err := d.getPeerAddress(id)
-	if err != nil {
-		return err
-	}
-	f := d.Node.Raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(address))
-	return f.Error()
-}
-
-func (d *defaultClusterState) getPeerAddress(id string) (string, error) {
-	cfg := d.Node.Raft.GetConfiguration()
-	if err := cfg.Error(); err != nil {
-		return "", err
-	}
-	for _, srv := range cfg.Configuration().Servers {
-		if string(srv.ID) == id {
-			return string(srv.Address), nil
-		}
-	}
-	return "", fmt.Errorf("peer not found: %s", id)
-}
-
-func (d *defaultClusterState) GetLeaderAddr() string {
-	addr, _ := d.Node.Raft.LeaderWithID()
-	return string(addr)
-}
-
-func (d *defaultClusterState) GetFormattedID() string {
-	return d.Node.Config.ID
-}
-
-func (d *defaultClusterState) GetServerCount() (int, error) {
-	cfg := d.Node.Raft.GetConfiguration()
-	if err := cfg.Error(); err != nil {
-		return 0, err
-	}
-	return len(cfg.Configuration().Servers), nil
-}
-
 func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger, llmProvider, llmModel string) *Engine {
 	return &Engine{
 		Node:            node,
 		fsm:             node.FSM,
 		llm:             llm,
 		nodeConfig:      node.Config,
-		clusterState:    &defaultClusterState{Node: node},
+		clusterState:    &clusterstate.DefaultClusterState{Node: node},
 		timerCh:         make(chan string, 100),
 		ProposalTimeout: 60 * time.Second,
 		VoteTimeout:     60 * time.Second,
@@ -703,51 +641,6 @@ func (e *Engine) checkForLeadershipTransfer() {
 			e.logger.Info("Leadership transfer initiated", zap.String("target", bestNode))
 		}
 	}
-}
-
-func (e *Engine) GetClusterAgentsState() []state.AgentState {
-	cfg := e.Node.Raft.GetConfiguration()
-	if err := cfg.Error(); err != nil {
-		e.logger.Error("Failed to get raft configuration", zap.Error(err))
-		return nil
-	}
-
-	var states []state.AgentState
-
-	for _, srv := range cfg.Configuration().Servers {
-		id := string(srv.ID)
-
-		// Raft State (Only accurate for self really, but we can infer Role if we track it?
-		// Actually RaftState from others is distinct. We only know if *we* are leader.
-		// For others, we only know they are in the config.
-		// Let's just put "Unknown" or exclude RaftState for others if not leader?
-		// Or maybe we can just say "Voter"?
-
-		raftState := "Voter"
-		if id == e.nodeConfig.ID {
-			raftState = e.Node.Raft.State().String()
-		} else {
-			// If we are leader, we might look at raft stats to see if they are followers?
-			// Simplify for now.
-		}
-
-		rep := e.fsm.GetReputation(id)
-		meta := e.fsm.GetMetadata(id)
-
-		agentState := state.AgentState{
-			ID:         id,
-			RaftState:  raftState,
-			Reputation: rep,
-		}
-
-		if meta != nil {
-			agentState.LLMProvider = meta.LLMProvider
-			agentState.LLMModel = meta.LLMModel
-		}
-
-		states = append(states, agentState)
-	}
-	return states
 }
 
 func (e *Engine) startTimer(taskID string, duration time.Duration) {

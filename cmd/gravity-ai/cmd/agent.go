@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/config"
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/engine"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	agentGrpc "github.com/dhiaayachi/gravity-ai/internal/grpc"
@@ -174,7 +175,7 @@ func runAgent(cmd *cobra.Command) {
 	}
 
 	// Start HTTP Server for API/Admin
-	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, eng, appLogger)
+	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, clusterstate.NewDefaultClusterState(node, node.FSM), appLogger)
 	go func() {
 		if err := httpServer.Run(); err != nil {
 			appLogger.Error("HTTP Start failed", zap.Error(err))

@@ -11,6 +11,7 @@ import (
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	fsm2 "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
+	"github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
 )
@@ -56,6 +57,10 @@ func (m *mockClusterState) GetFormattedID() string {
 
 func (m *mockClusterState) GetServerCount() (int, error) {
 	return m.serverCount, nil
+}
+
+func (m *mockClusterState) GetClusterAgentsState() []state.AgentState {
+	return nil
 }
 
 type mockClusterState struct {

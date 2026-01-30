@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dhiaayachi/gravity-ai/internal/engine"
+	clusterstate "github.com/dhiaayachi/gravity-ai/internal/cluster-state"
 	"github.com/dhiaayachi/gravity-ai/internal/grpc"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -15,20 +15,20 @@ import (
 type Server struct {
 	router       *gin.Engine
 	agentService *grpc.AgentService
-	engine       *engine.Engine
+	state        clusterstate.ClusterState
 	httpServer   *http.Server
 	addr         string
 	logger       *zap.Logger
 }
 
-func NewServer(addr string, agentService *grpc.AgentService, engine *engine.Engine, logger *zap.Logger) *Server {
+func NewServer(addr string, agentService *grpc.AgentService, cs clusterstate.ClusterState, logger *zap.Logger) *Server {
 	// standard gin with logger and recovery
 	router := gin.Default()
 
 	s := &Server{
 		router:       router,
 		agentService: agentService,
-		engine:       engine,
+		state:        cs,
 		addr:         addr,
 		logger:       logger.With(zap.String("component", "http_server")),
 	}

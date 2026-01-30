@@ -159,6 +159,6 @@ func (s *Server) handleVersion(c *gin.Context) {
 }
 
 func (s *Server) handleAgentState(c *gin.Context) {
-	states := s.engine.GetClusterAgentsState()
+	states := s.state.GetClusterAgentsState()
 	c.JSON(http.StatusOK, states)
 }
