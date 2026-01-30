@@ -108,9 +108,8 @@ func (s *Server) waitForTask(ctx context.Context, id string) (error, *core.Task)
 		if err != nil {
 			return err, nil
 		}
-		switch ev.(type) {
+		switch task := ev.(type) {
 		case *core.Task:
-			task := ev.(*core.Task)
 			if task.Status == core.TaskStatusDone {
 				return nil, task
 			}
