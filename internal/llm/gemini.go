@@ -44,7 +44,7 @@ func (c *GeminiClient) Generate(prompt string) (string, error) {
 	return parseGeminiResponse(resp)
 }
 
-func (c *GeminiClient) Validate(taskContent string, proposal string) (bool, error) {
+func (c *GeminiClient) Validate(taskContent string, proposal string) (bool, string, error) {
 	ctx := context.Background()
 	model := c.client.GenerativeModel(c.model)
 
@@ -54,12 +54,12 @@ func (c *GeminiClient) Validate(taskContent string, proposal string) (bool, erro
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	content, err := parseGeminiResponse(resp)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	// Clean up potential Markdown code blocks
@@ -67,10 +67,10 @@ func (c *GeminiClient) Validate(taskContent string, proposal string) (bool, erro
 
 	var validation validationResponse
 	if err := json.Unmarshal([]byte(content), &validation); err != nil {
-		return false, fmt.Errorf("failed to parse validation response: %w, content: %s", err, content)
+		return false, "", fmt.Errorf("failed to parse validation response: %w, content: %s", err, content)
 	}
 
-	return validation.Valid, nil
+	return validation.Valid, validation.Reason, nil
 }
 
 func (c *GeminiClient) Aggregate(taskContent string, answers []string) (string, error) {

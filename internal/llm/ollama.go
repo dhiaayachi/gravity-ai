@@ -54,7 +54,7 @@ func (c *OllamaClient) Generate(prompt string) (string, error) {
 	return responseContent, nil
 }
 
-func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, error) {
+func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, string, error) {
 	ctx := context.Background()
 	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
 
@@ -76,15 +76,15 @@ func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, erro
 	}
 
 	if err := c.client.Generate(ctx, req, fn); err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	var validation validationResponse
 	if err := json.Unmarshal([]byte(responseContent), &validation); err != nil {
-		return false, fmt.Errorf("failed to parse validation response: %w", err)
+		return false, "", fmt.Errorf("failed to parse validation response: %w", err)
 	}
 
-	return validation.Valid, nil
+	return validation.Valid, validation.Reason, nil
 }
 
 func (c *OllamaClient) Aggregate(taskContent string, answers []string) (string, error) {

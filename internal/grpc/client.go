@@ -23,7 +23,7 @@ func NewClient(localAddr string) *Client {
 // Ensure Client implements engine.ClusterClient
 var _ engine.ClusterClient = (*Client)(nil)
 
-func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool) error {
+func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error {
 
 	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -35,9 +35,11 @@ func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepte
 
 	client := pb.NewGravityServiceClient(conn)
 	req := &pb.SubmitVoteRequest{
-		TaskId:   taskID,
-		AgentId:  agentID,
-		Accepted: accepted,
+		TaskId:    taskID,
+		AgentId:   agentID,
+		Accepted:  accepted,
+		Reasoning: reasoning,
+		Rebuttal:  rebuttal,
 	}
 
 	resp, err := client.SubmitVote(ctx, req)

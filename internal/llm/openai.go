@@ -50,7 +50,7 @@ type validationResponse struct {
 	Reason string `json:"reason"`
 }
 
-func (c *OpenAIClient) Validate(taskContent string, proposal string) (bool, error) {
+func (c *OpenAIClient) Validate(taskContent string, proposal string) (bool, string, error) {
 	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
 
 	// Use JSON mode for reliability
@@ -75,7 +75,7 @@ func (c *OpenAIClient) Validate(taskContent string, proposal string) (bool, erro
 	)
 
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	var validation validationResponse
@@ -85,10 +85,10 @@ func (c *OpenAIClient) Validate(taskContent string, proposal string) (bool, erro
 	if err := json.Unmarshal([]byte(content), &validation); err != nil {
 		// Simple retry logic could go here, but with JSON mode it's rarely needed for syntax
 		// If fails, defaulting to false is safe
-		return false, fmt.Errorf("failed to parse validation response: %w", err)
+		return false, "", fmt.Errorf("failed to parse validation response: %w", err)
 	}
 
-	return validation.Valid, nil
+	return validation.Valid, validation.Reason, nil
 }
 
 func (c *OpenAIClient) Aggregate(taskContent string, answers []string) (string, error) {

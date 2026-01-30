@@ -91,8 +91,8 @@ func (m *mockLLM) Generate(_ string) (string, error) {
 	return m.genResp, m.genErr
 }
 
-func (m *mockLLM) Validate(_ string, _ string) (bool, error) {
-	return m.validResp, m.validErr
+func (m *mockLLM) Validate(_ string, _ string) (bool, string, error) {
+	return m.validResp, "mock reasoning", m.validErr
 }
 
 func (m *mockLLM) Aggregate(_ string, _ []string) (string, error) {
@@ -108,7 +108,7 @@ type mockClusterClient struct {
 	answer       string
 }
 
-func (m *mockClusterClient) SubmitVote(_ context.Context, taskID, agentID string, accepted bool) error {
+func (m *mockClusterClient) SubmitVote(_ context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true

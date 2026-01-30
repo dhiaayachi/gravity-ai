@@ -5,7 +5,7 @@ import "strings"
 // Client is the interface for interacting with the backend LLM
 type Client interface {
 	Generate(prompt string) (string, error)
-	Validate(taskContent string, proposal string) (bool, error)
+	Validate(taskContent string, proposal string) (valid bool, reasoning string, err error)
 	Aggregate(taskContent string, answers []string) (string, error)
 }
 

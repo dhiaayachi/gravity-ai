@@ -55,7 +55,7 @@ func (c *ClaudeClient) Generate(prompt string) (string, error) {
 	return *resp.Content[0].Text, nil
 }
 
-func (c *ClaudeClient) Validate(taskContent string, proposal string) (bool, error) {
+func (c *ClaudeClient) Validate(taskContent string, proposal string) (bool, string, error) {
 	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
 
 	resp, err := c.client.CreateMessages(
@@ -74,15 +74,15 @@ func (c *ClaudeClient) Validate(taskContent string, proposal string) (bool, erro
 		},
 	)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	if len(resp.Content) == 0 {
-		return false, fmt.Errorf("empty response")
+		return false, "", fmt.Errorf("empty response")
 	}
 
 	if resp.Content[0].Text == nil {
-		return false, fmt.Errorf("response content text is nil")
+		return false, "", fmt.Errorf("response content text is nil")
 	}
 
 	content := *resp.Content[0].Text
@@ -90,10 +90,10 @@ func (c *ClaudeClient) Validate(taskContent string, proposal string) (bool, erro
 
 	var validation validationResponse
 	if err := json.Unmarshal([]byte(content), &validation); err != nil {
-		return false, fmt.Errorf("failed to parse validation response: %w", err)
+		return false, "", fmt.Errorf("failed to parse validation response: %w", err)
 	}
 
-	return validation.Valid, nil
+	return validation.Valid, validation.Reason, nil
 }
 
 func (c *ClaudeClient) Aggregate(taskContent string, answers []string) (string, error) {

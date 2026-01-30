@@ -34,9 +34,11 @@ type Answer struct {
 
 // Vote represents a vote from an agent during the Vote phase
 type Vote struct {
-	TaskID   string `json:"task_id"`
-	AgentID  string `json:"agent_id"`
-	Accepted bool   `json:"accepted"`
+	TaskID    string `json:"task_id"`
+	AgentID   string `json:"agent_id"`
+	Accepted  bool   `json:"accepted"`
+	Reasoning string `json:"reasoning,omitempty"` // Why the agent voted this way
+	Rebuttal  string `json:"rebuttal,omitempty"`  // Counter-proposal (if rejected)
 }
 
 // AgentConfig represents the persistent state of an agent

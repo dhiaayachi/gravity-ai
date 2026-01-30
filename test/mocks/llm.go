@@ -19,14 +19,14 @@ func (m *MockLLM) Generate(prompt string) (string, error) {
 	return "Mock Answer for: " + prompt, nil
 }
 
-func (m *MockLLM) Validate(taskContent string, proposal string) (bool, error) {
+func (m *MockLLM) Validate(taskContent string, proposal string) (bool, string, error) {
 	if !m.Healthy {
-		return false, errors.New("llm unhealthy")
+		return false, "", errors.New("llm unhealthy")
 	}
 	if m.ValidationLogic != nil {
-		return m.ValidationLogic(taskContent, proposal), nil
+		return m.ValidationLogic(taskContent, proposal), "mock reasoning", nil
 	}
-	return true, nil
+	return true, "mock approved", nil
 }
 
 func (m *MockLLM) Aggregate(_ string, _ []string) (string, error) {

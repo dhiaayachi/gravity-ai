@@ -22,6 +22,8 @@ message SubmitVoteRequest {
   string task_id = 1;
   string agent_id = 2;
   bool accepted = 3;
+  string reasoning = 4; // Why the agent voted this way
+  string rebuttal = 5;  // Counter-proposal if rejected
 }
 
 message SubmitVoteResponse {

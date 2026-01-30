@@ -113,12 +113,14 @@ func (a *AgentService) SubmitAnswer(taskID, agentID, content string) error {
 }
 
 // SubmitVote handles vote submission
-func (a *AgentService) SubmitVote(taskID, agentID string, accepted bool) error {
+func (a *AgentService) SubmitVote(taskID, agentID string, accepted bool, reasoning, rebuttal string) error {
 
 	vote := &core.Vote{
-		TaskID:   taskID,
-		AgentID:  agentID,
-		Accepted: accepted,
+		TaskID:    taskID,
+		AgentID:   agentID,
+		Accepted:  accepted,
+		Reasoning: reasoning,
+		Rebuttal:  rebuttal,
 	}
 
 	voteBytes, err := json.Marshal(vote)

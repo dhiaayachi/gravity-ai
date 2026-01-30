@@ -52,7 +52,7 @@ type Engine struct {
 
 // ClusterClient defines the interface for communicating with other agents
 type ClusterClient interface {
-	SubmitVote(ctx context.Context, taskID, agentID string, accepted bool) error
+	SubmitVote(ctx context.Context, taskID, agentID string, accepted bool, reasoning, rebuttal string) error
 	SubmitAnswer(ctx context.Context, taskID, agentID string, content string) error
 	UpdateMetadata(ctx context.Context, agentID, provider, model string) error
 }
@@ -377,20 +377,30 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) error {
 func (e *Engine) runVotePhase(task *core.Task) error {
 
 	// Use LLM to validate the proposal
-	isValid, err := e.llm.Validate(task.Content, task.Result)
-	log.Printf("[%s] Validating and casting vote for task %s voted: %v", e.nodeConfig.ID, task.ID, isValid)
+	isValid, reasoning, err := e.llm.Validate(task.Content, task.Result)
+	log.Printf("[%s] Validating and casting vote for task %s voted: %v reason: %s", e.nodeConfig.ID, task.ID, isValid, reasoning)
 	if err != nil {
 		log.Printf("[%s] LLM validation failed: %v", e.nodeConfig.ID, err)
 		// Decide default behavior on error. For now, assume reject if we can't validate.
 		isValid = false
+		reasoning = "validation error: " + err.Error()
+	}
+
+	// Generate rebuttal if rejecting (empty for now, could use another LLM call)
+	rebuttal := ""
+	if !isValid {
+		// Optionally generate a rebuttal using LLM
+		// For now, leave empty
 	}
 
 	// 1. If Leader, apply directly
 	if e.clusterState.IsLeader() {
 		vote := core.Vote{
-			TaskID:   task.ID,
-			AgentID:  e.nodeConfig.ID,
-			Accepted: isValid,
+			TaskID:    task.ID,
+			AgentID:   e.nodeConfig.ID,
+			Accepted:  isValid,
+			Reasoning: reasoning,
+			Rebuttal:  rebuttal,
 		}
 
 		voteBytes, _ := json.Marshal(vote)
@@ -407,18 +417,6 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 	}
 
 	// 2. If Follower, submit to leader via gRPC
-	// We need the leader address.
-	// We can't easily get the leader TCP address from Raft object directly if it's not exposed in ClusterState?
-	// ClusterState interface needs to expose Leader Address?
-	// defaultClusterState uses e.Node.Raft.Leader().
-	// But ClusterState only has IsLeader().
-	// We can add GetLeaderAddr to ClusterState. Or cast internal node.
-
-	// Let's rely on e.Node.Raft for now via a cast or update ClusterState interface.
-	// Updating ClusterState interface is cleaner.
-
-	// BUT, wait. e.Node is public in Engine struct. We can access it directly?
-	// Yes, `e.Node.Raft.Leader()`.
 	if e.clusterClient == nil {
 		log.Printf("[%s] Cannot vote: ClusterClient not initialized", e.nodeConfig.ID)
 		return fmt.Errorf("cannot vote: ClusterClient not initialized")
@@ -427,7 +425,7 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := e.clusterClient.SubmitVote(ctx, task.ID, e.nodeConfig.ID, isValid); err != nil {
+	if err := e.clusterClient.SubmitVote(ctx, task.ID, e.nodeConfig.ID, isValid, reasoning, rebuttal); err != nil {
 		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
 	return nil
