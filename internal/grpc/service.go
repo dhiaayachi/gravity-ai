@@ -73,7 +73,7 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 		return nil, err
 	}
 
-	if f := a.raft.Apply(b, 5*time.Second); f.Error() != nil {
+	if f := a.raft.Apply(b, 15*time.Second); f.Error() != nil {
 		a.taskRegistrar.DeregisterTask(task)
 		return nil, f.Error()
 	}
@@ -108,7 +108,7 @@ func (a *AgentService) SubmitAnswer(taskID, agentID, content string) error {
 		return err
 	}
 
-	f := a.raft.Apply(b, 5*time.Second)
+	f := a.raft.Apply(b, 15*time.Second)
 	return f.Error()
 }
 
@@ -136,7 +136,7 @@ func (a *AgentService) SubmitVote(taskID, agentID string, accepted bool) error {
 		return err
 	}
 
-	f := a.raft.Apply(b, 5*time.Second)
+	f := a.raft.Apply(b, 15*time.Second)
 	return f.Error()
 }
 
@@ -163,6 +163,6 @@ func (a *AgentService) UpdateMetadata(ctx context.Context, agentID, provider, mo
 		return err
 	}
 
-	f := a.raft.Apply(b, 5*time.Second)
+	f := a.raft.Apply(b, 15*time.Second)
 	return f.Error()
 }

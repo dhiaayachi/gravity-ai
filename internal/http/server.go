@@ -12,22 +12,26 @@ import (
 	"go.uber.org/zap"
 )
 
+type TaskSubmitter interface {
+	SubmitTask(ctx context.Context, requester, content string) (string, error)
+}
+
 type Server struct {
 	router       *gin.Engine
-	agentService *grpc.AgentService
+	agentService TaskSubmitter
 	state        clusterstate.ClusterState
 	httpServer   *http.Server
 	addr         string
 	logger       *zap.Logger
 }
 
-func NewServer(addr string, agentService *grpc.AgentService, cs clusterstate.ClusterState, logger *zap.Logger) *Server {
+func NewServer(addr string, grpcClient *grpc.Client, cs clusterstate.ClusterState, logger *zap.Logger) *Server {
 	// standard gin with logger and recovery
 	router := gin.Default()
 
 	s := &Server{
 		router:       router,
-		agentService: agentService,
+		agentService: grpcClient,
 		state:        cs,
 		addr:         addr,
 		logger:       logger.With(zap.String("component", "http_server")),

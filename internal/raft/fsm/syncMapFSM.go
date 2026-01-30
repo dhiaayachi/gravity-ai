@@ -135,7 +135,7 @@ func (f *SyncMapFSM) Subscribe(prefix string, id string, version uint64) <-chan 
 
 	if currentVer > version {
 		// Send immediate update
-		val := f.getByKey(prefix, id)
+		val := f.getByKeyUnlocked(prefix, id)
 		if val != nil {
 			ch <- KVEntry{
 				Key:     key,
@@ -175,22 +175,39 @@ func (f *SyncMapFSM) notifySubscribers(key string, value interface{}, version ui
 			// Ideally we don't block Apply.
 			log.Printf("Warning: Subscriber channel full for key %s", key)
 		}
-		close(ch)
+		//close(ch)
 	}
 
 	// Remove subscribers for this key (one-shot)
 	delete(f.Subscribers, key)
 }
 
-func (f *SyncMapFSM) getByKey(prefix, id string) interface{} {
+// getByKeyUnlocked retrieves the value for a key.
+// IMPORTANT: Caller must already hold f.mutex (read or write lock).
+func (f *SyncMapFSM) getByKeyUnlocked(prefix, id string) interface{} {
 	switch prefix {
 	case KeyPrefixReputation:
-		return f.GetReputation(id)
+		// Reputations is a sync.Map, safe to call without mutex
+		val, ok := f.Reputations.Load(id)
+		if !ok {
+			return 100 // Default reputation
+		}
+		return val.(int)
 	case KeyPrefixTask:
-		task, _ := f.GetTask(id)
-		return task
+		// f.Tasks is a regular map, caller must hold mutex
+		val, ok := f.Tasks[id]
+		if !ok {
+			return nil
+		}
+		return val
 	case KeyPrefixMetadata:
-		return f.GetMetadata(id)
+		// Metadata is a sync.Map, safe to call without mutex
+		val, ok := f.Metadata.Load(id)
+		if !ok {
+			return nil
+		}
+		meta := val.(core.AgentMetadata)
+		return &meta
 	default:
 		return nil
 	}
@@ -250,10 +267,12 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		f.notifySubscribers(key, &task, ver)
 
 	case CommandTypeSubmitAnswer:
+
 		var answer core.Answer
 		if err := json.Unmarshal(cmd.Value, &answer); err != nil {
 			return fmt.Errorf("failed to unmarshal answer: %w", err)
 		}
+		log.Printf("\nFSM: Applying submit answer command: %s\n", answer.TaskID)
 		answers, _ := f.TaskAnswers[answer.TaskID]
 		answers = append(answers, answer)
 		f.TaskAnswers[answer.TaskID] = answers
@@ -263,6 +282,7 @@ func (f *SyncMapFSM) Apply(logEntry *raft.Log) interface{} {
 		case f.EventCh <- Event{Type: EventAnswerSubmitted, Data: &answer}:
 		default:
 		}
+		log.Printf("\nFSM: Answer submitted: %s\n", answer.TaskID)
 
 	case CommandTypeUpdateTask:
 		var task core.Task

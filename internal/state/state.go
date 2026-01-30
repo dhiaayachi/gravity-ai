@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
@@ -17,6 +18,7 @@ type ClusterState interface {
 	DropLeader() error
 	TransferLeadership(id string) error
 	GetClusterAgentsState() []AgentState
+	WaitForEvent(ctx context.Context, prefix string, key string, version uint64) (error, interface{}, uint64)
 }
 
 // AgentState represents the exposed state of the agent
@@ -127,4 +129,14 @@ func (d *DefaultClusterState) GetClusterAgentsState() []AgentState {
 		states = append(states, agentState)
 	}
 	return states
+}
+
+func (d *DefaultClusterState) WaitForEvent(ctx context.Context, prefix string, key string, version uint64) (error, interface{}, uint64) {
+	ch := d.fsm.Subscribe(prefix, key, version)
+	select {
+	case e := <-ch:
+		return nil, e.Value, e.Version
+	case <-ctx.Done():
+		return ctx.Err(), nil, 0
+	}
 }

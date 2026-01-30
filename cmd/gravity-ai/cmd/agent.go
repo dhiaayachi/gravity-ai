@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 
 	"github.com/dhiaayachi/gravity-ai/config"
@@ -165,17 +166,19 @@ func runAgent(cmd *cobra.Command) {
 
 	eng.Start()
 
+	port := strings.Split(cfg.BindAddr, ":")[1]
+	portInt, _ := strconv.Atoi(port)
+
 	svc := agentGrpc.NewAgentService(node.Raft, &taskManager)
 	// Start gRPC Server
-	// We ignore grpcPort flag and use the muxed listener
-	grpcServer := agentGrpc.NewServer(svc, node, 0, gs, appLogger) // Port is irrelevant for muxed listener but might be used for logging
+	grpcServer := agentGrpc.NewServer(svc, node, portInt, gs, appLogger)
 
 	if err := grpcServer.Start(lis); err != nil {
 		appLogger.Fatal("Failed to start gRPC server", zap.Error(err))
 	}
 
 	// Start HTTP Server for API/Admin
-	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, svc, clusterstate.NewDefaultClusterState(node, node.FSM), appLogger)
+	httpServer := gravityHttp.NewServer(cfg.HTTPAddr, clusterClient, clusterstate.NewDefaultClusterState(node, node.FSM), appLogger)
 	go func() {
 		if err := httpServer.Run(); err != nil {
 			appLogger.Error("HTTP Start failed", zap.Error(err))

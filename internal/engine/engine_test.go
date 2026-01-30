@@ -63,6 +63,14 @@ func (m *mockClusterState) GetClusterAgentsState() []state.AgentState {
 	return nil
 }
 
+func (m *mockClusterState) GetClusterState() state.ClusterState {
+	return nil
+}
+
+func (m *mockClusterState) WaitForEvent(ctx context.Context, prefix string, key string, version uint64) (error, interface{}, uint64) {
+	return nil, nil, 0
+}
+
 type mockClusterState struct {
 	serverCount    int
 	isLeader       bool

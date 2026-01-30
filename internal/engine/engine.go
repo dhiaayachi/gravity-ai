@@ -115,7 +115,9 @@ func (e *Engine) Start() {
 				}
 			} else {
 				// Forward to Leader
-				err = e.clusterClient.UpdateMetadata(context.Background(), meta.ID, meta.LLMProvider, meta.LLMModel)
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				err = e.clusterClient.UpdateMetadata(ctx, meta.ID, meta.LLMProvider, meta.LLMModel)
 
 			}
 
@@ -286,8 +288,10 @@ func (e *Engine) runBrainstormPhase(task *core.Task) error {
 	}
 
 	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("answer", ansContent))
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	// Submit answer to leader
-	err = e.clusterClient.SubmitAnswer(context.Background(), task.ID, e.nodeConfig.ID, ansContent)
+	err = e.clusterClient.SubmitAnswer(ctx, task.ID, e.nodeConfig.ID, ansContent)
 	if err != nil {
 		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
 		return fmt.Errorf("Failed to apply answer: %w", err)

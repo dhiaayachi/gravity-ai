@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dhiaayachi/gravity-ai/internal/core"
+	"github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const (
@@ -66,23 +69,7 @@ func (s *Server) handleGenerate(c *gin.Context) {
 	}
 
 	// Submit task to Gravity Engine
-	future, err := s.agentService.SubmitTask(req.Prompt, "http-api")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to submit task: %v", err)})
-		return
-	}
-
-	// Wait for result
-	// TODO: Implement long-polling or configurable timeout depending on needs.
-	// For now, blocking wait (might timeout client if task takes long)
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
-	defer cancel()
-
-	task, err := future.Await(ctx)
-	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "task timed out or cancelled"})
-		return
-	}
+	task := s.submitTask(c, req.Prompt)
 
 	resp := OllamaGenerateResponse{
 		Model:           req.Model, // Echo back requested model or actual?
@@ -93,6 +80,42 @@ func (s *Server) handleGenerate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) submitTask(c *gin.Context, prompt string) *core.Task {
+	taskID, err := s.agentService.SubmitTask(c.Request.Context(), "http-api", prompt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to submit task: %v", err)})
+		return nil
+	}
+
+	err, task := s.waitForTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "task timed out or cancelled"})
+		return nil
+	}
+
+	return task
+}
+
+func (s *Server) waitForTask(ctx context.Context, id string) (error, *core.Task) {
+	var version uint64 = 0
+	for {
+		s.logger.Debug("waiting for task", zap.String("id", id), zap.Uint64("last_version", version))
+		var err error
+		var ev interface{}
+		err, ev, version = s.state.WaitForEvent(ctx, fsm.KeyPrefixTask, id, version)
+		if err != nil {
+			return err, nil
+		}
+		switch ev.(type) {
+		case *core.Task:
+			task := ev.(*core.Task)
+			if task.Status == core.TaskStatusDone {
+				return nil, task
+			}
+		}
+	}
 }
 
 func (s *Server) handleChat(c *gin.Context) {
@@ -110,20 +133,7 @@ func (s *Server) handleChat(c *gin.Context) {
 		prompt += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
 	}
 
-	future, err := s.agentService.SubmitTask(prompt, "http-api")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to submit task: %v", err)})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
-	defer cancel()
-
-	task, err := future.Await(ctx)
-	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "task timed out or cancelled"})
-		return
-	}
+	task := s.submitTask(c, prompt)
 
 	resp := OllamaChatResponse{
 		Model:     req.Model,

@@ -24,9 +24,8 @@ func NewClient(localAddr string) *Client {
 var _ engine.ClusterClient = (*Client)(nil)
 
 func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool) error {
-	target := c.localAddr
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial leader: %w", err)
 	}
@@ -52,9 +51,8 @@ func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepte
 }
 
 func (c *Client) SubmitAnswer(ctx context.Context, taskID, agentID string, content string) error {
-	target := c.localAddr
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial leader: %w", err)
 	}
@@ -80,9 +78,8 @@ func (c *Client) SubmitAnswer(ctx context.Context, taskID, agentID string, conte
 }
 
 func (c *Client) UpdateMetadata(ctx context.Context, agentID, provider, model string) error {
-	target := c.localAddr
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial leader: %w", err)
 	}
@@ -105,4 +102,30 @@ func (c *Client) UpdateMetadata(ctx context.Context, agentID, provider, model st
 		return fmt.Errorf("leader rejected metadata update: %s", resp.Message)
 	}
 	return nil
+}
+
+func (c *Client) SubmitTask(ctx context.Context, requester, content string) (string, error) {
+
+	conn, err := grpc.NewClient(c.localAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return "", fmt.Errorf("failed to dial leader: %w", err)
+	}
+	defer func(conn *grpc.ClientConn) {
+		_ = conn.Close()
+	}(conn)
+
+	client := pb.NewGravityServiceClient(conn)
+	req := &pb.SubmitTaskRequest{
+		Requester: requester,
+		Content:   content,
+	}
+
+	resp, err := client.SubmitTask(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if resp.TaskId == "" {
+		return "", fmt.Errorf("leader rejected metadata update: %s", resp.TaskId)
+	}
+	return resp.TaskId, nil
 }

@@ -70,9 +70,11 @@ func (s *Server) SubmitTask(ctx context.Context, req *pb.SubmitTaskRequest) (*pb
 		func(client pb.GravityServiceClient, ctx context.Context, req *pb.SubmitTaskRequest) (*pb.SubmitTaskResponse, error) {
 			return client.SubmitTask(ctx, req)
 		}); forward {
+		s.logger.Debug("Forwarded task to leader")
 		return response, err
 	}
 
+	s.logger.Debug("Processing task")
 	future, err := s.service.SubmitTask(req.Content, req.Requester)
 	if err != nil {
 		return nil, err
@@ -88,10 +90,12 @@ func (s *Server) SubmitAnswer(ctx context.Context, req *pb.SubmitAnswerRequest) 
 		func(client pb.GravityServiceClient, ctx context.Context, req *pb.SubmitAnswerRequest) (*pb.SubmitAnswerResponse, error) {
 			return client.SubmitAnswer(ctx, req)
 		}); forward {
+		s.logger.Debug("Forwarded answer to leader")
 		return response, err
 	}
 
 	// Using Engine.SubmitAnswer as proxy for Proposal in this architecture
+	s.logger.Debug("Processing answer")
 	err := s.service.SubmitAnswer(req.TaskId, req.AgentId, req.Content)
 	if err != nil {
 		return &pb.SubmitAnswerResponse{Success: false, Message: err.Error()}, nil
@@ -105,9 +109,11 @@ func (s *Server) SubmitVote(ctx context.Context, req *pb.SubmitVoteRequest) (*pb
 		func(client pb.GravityServiceClient, ctx context.Context, req *pb.SubmitVoteRequest) (*pb.SubmitVoteResponse, error) {
 			return client.SubmitVote(ctx, req)
 		}); forward {
+		s.logger.Debug("Forwarded vote to leader")
 		return response, err
 	}
 
+	s.logger.Debug("Processing vote")
 	err := s.service.SubmitVote(req.TaskId, req.AgentId, req.Accepted)
 	if err != nil {
 		return &pb.SubmitVoteResponse{Success: false, Message: err.Error()}, nil
@@ -121,9 +127,11 @@ func (s *Server) UpdateMetadata(ctx context.Context, req *pb.UpdateMetadataReque
 		func(client pb.GravityServiceClient, ctx context.Context, req *pb.UpdateMetadataRequest) (*pb.UpdateMetadataResponse, error) {
 			return client.UpdateMetadata(ctx, req)
 		}); forward {
+		s.logger.Debug("Forwarded metadata to leader")
 		return response, err
 	}
 
+	s.logger.Debug("Processing metadata")
 	err := s.service.UpdateMetadata(ctx, req.AgentId, req.LlmProvider, req.LlmModel)
 	if err != nil {
 		return &pb.UpdateMetadataResponse{Success: false, Message: err.Error()}, nil
