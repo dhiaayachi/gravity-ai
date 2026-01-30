@@ -32,3 +32,4 @@ Thumbs.db
 *.bolt
 ./gravity-ai
 coverage.out
+./tmp
