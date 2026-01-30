@@ -11,18 +11,20 @@ import (
 )
 
 type Client struct {
-	// No longer need fixed peerPort as we use leaderAddr directly
+	localAddr string
 }
 
-func NewClient() *Client {
-	return &Client{}
+func NewClient(localAddr string) *Client {
+	return &Client{
+		localAddr: localAddr,
+	}
 }
 
 // Ensure Client implements engine.ClusterClient
 var _ engine.ClusterClient = (*Client)(nil)
 
-func (c *Client) SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error {
-	target := leaderAddr
+func (c *Client) SubmitVote(ctx context.Context, taskID, agentID string, accepted bool) error {
+	target := c.localAddr
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -49,8 +51,8 @@ func (c *Client) SubmitVote(ctx context.Context, leaderAddr string, taskID, agen
 	return nil
 }
 
-func (c *Client) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, content string) error {
-	target := leaderAddr
+func (c *Client) SubmitAnswer(ctx context.Context, taskID, agentID string, content string) error {
+	target := c.localAddr
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -77,8 +79,8 @@ func (c *Client) SubmitAnswer(ctx context.Context, leaderAddr string, taskID, ag
 	return nil
 }
 
-func (c *Client) UpdateMetadata(ctx context.Context, leaderAddr string, agentID, provider, model string) error {
-	target := leaderAddr
+func (c *Client) UpdateMetadata(ctx context.Context, agentID, provider, model string) error {
+	target := c.localAddr
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

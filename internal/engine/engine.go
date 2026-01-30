@@ -53,9 +53,9 @@ type Engine struct {
 
 // ClusterClient defines the interface for communicating with other agents
 type ClusterClient interface {
-	SubmitVote(ctx context.Context, leaderAddr string, taskID, agentID string, accepted bool) error
-	SubmitAnswer(ctx context.Context, leaderAddr string, taskID, agentID string, content string) error
-	UpdateMetadata(ctx context.Context, leaderAddr string, agentID, provider, model string) error
+	SubmitVote(ctx context.Context, taskID, agentID string, accepted bool) error
+	SubmitAnswer(ctx context.Context, taskID, agentID string, content string) error
+	UpdateMetadata(ctx context.Context, agentID, provider, model string) error
 }
 
 func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient ClusterClient, notifier TaskNotifier, logger *zap.Logger, llmProvider, llmModel string) *Engine {
@@ -116,12 +116,8 @@ func (e *Engine) Start() {
 				}
 			} else {
 				// Forward to Leader
-				leaderAddr := e.clusterState.GetLeaderAddr()
-				if leaderAddr == "" {
-					err = fmt.Errorf("no leader")
-				} else {
-					err = e.clusterClient.UpdateMetadata(context.Background(), leaderAddr, meta.ID, meta.LLMProvider, meta.LLMModel)
-				}
+				err = e.clusterClient.UpdateMetadata(context.Background(), meta.ID, meta.LLMProvider, meta.LLMModel)
+
 			}
 
 			if err == nil {
@@ -290,16 +286,9 @@ func (e *Engine) runBrainstormPhase(task *core.Task) error {
 		return fmt.Errorf("LLM generation failed: %w", err)
 	}
 
-	// Get leader address
-	leaderAddr := e.clusterState.GetLeaderAddr()
-	if leaderAddr == "" {
-		e.logger.Warn("Cannot submit answer: No leader known")
-		return fmt.Errorf("Cannot submit answer: No leader known")
-	}
-
-	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("leader_addr", leaderAddr), zap.String("answer", ansContent))
+	e.logger.Info("Submitting answer to leader", zap.String("task_id", task.ID), zap.String("answer", ansContent))
 	// Submit answer to leader
-	err = e.clusterClient.SubmitAnswer(context.Background(), leaderAddr, task.ID, e.nodeConfig.ID, ansContent)
+	err = e.clusterClient.SubmitAnswer(context.Background(), task.ID, e.nodeConfig.ID, ansContent)
 	if err != nil {
 		e.logger.Error("Failed to apply answer", zap.Error(err), zap.String("task_id", task.ID))
 		return fmt.Errorf("Failed to apply answer: %w", err)
@@ -427,13 +416,6 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 
 	// BUT, wait. e.Node is public in Engine struct. We can access it directly?
 	// Yes, `e.Node.Raft.Leader()`.
-
-	leaderAddr := e.clusterState.GetLeaderAddr()
-	if leaderAddr == "" {
-		log.Printf("[%s] Cannot vote: No leader known", e.nodeConfig.ID)
-		return fmt.Errorf("cannot vote: No leader known")
-	}
-
 	if e.clusterClient == nil {
 		log.Printf("[%s] Cannot vote: ClusterClient not initialized", e.nodeConfig.ID)
 		return fmt.Errorf("cannot vote: ClusterClient not initialized")
@@ -442,7 +424,7 @@ func (e *Engine) runVotePhase(task *core.Task) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := e.clusterClient.SubmitVote(ctx, leaderAddr, task.ID, e.nodeConfig.ID, isValid); err != nil {
+	if err := e.clusterClient.SubmitVote(ctx, task.ID, e.nodeConfig.ID, isValid); err != nil {
 		log.Printf("[%s] Failed to submit vote to leader: %v", e.nodeConfig.ID, err)
 	}
 	return nil

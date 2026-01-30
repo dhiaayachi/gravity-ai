@@ -158,7 +158,7 @@ func runAgent(cmd *cobra.Command) {
 	}
 
 	// We pass 0 as port or remove port dependency in client next
-	clusterClient := agentGrpc.NewClient()
+	clusterClient := agentGrpc.NewClient(cfg.BindAddr)
 	taskManager := tasks_manager.TasksManager{}
 
 	eng := engine.NewEngine(node, llmClient, clusterClient, &taskManager, appLogger, cfg.LLMProvider, cfg.Model)

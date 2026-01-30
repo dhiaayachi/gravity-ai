@@ -111,7 +111,7 @@ func Setup(t *testing.T, count int, basePort int, mockFactory func(nodeIndex int
 
 		mgr := tasks_manager.TasksManager{}
 		// Client no longer needs port
-		eng := engine.NewEngine(node, mockLLM, agentGrpc.NewClient(), &mgr, zap.NewNop(), "mock", "mock-model")
+		eng := engine.NewEngine(node, mockLLM, agentGrpc.NewClient(peers[id]), &mgr, zap.NewNop(), "mock", "mock-model")
 
 		nodes = append(nodes, node)
 		engines = append(engines, eng)

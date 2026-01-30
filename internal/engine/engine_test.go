@@ -100,7 +100,7 @@ type mockClusterClient struct {
 	answer       string
 }
 
-func (m *mockClusterClient) SubmitVote(_ context.Context, _ string, taskID, agentID string, accepted bool) error {
+func (m *mockClusterClient) SubmitVote(_ context.Context, taskID, agentID string, accepted bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
@@ -109,7 +109,7 @@ func (m *mockClusterClient) SubmitVote(_ context.Context, _ string, taskID, agen
 	m.voteAccepted = accepted
 	return nil
 }
-func (m *mockClusterClient) SubmitAnswer(_ context.Context, _ string, taskID, agentID string, answer string) error {
+func (m *mockClusterClient) SubmitAnswer(_ context.Context, taskID, agentID string, answer string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.voted = true
@@ -120,7 +120,7 @@ func (m *mockClusterClient) SubmitAnswer(_ context.Context, _ string, taskID, ag
 	return nil
 }
 
-func (m *mockClusterClient) UpdateMetadata(_ context.Context, _ string, _, _, _ string) error {
+func (m *mockClusterClient) UpdateMetadata(_ context.Context, agentID, provider, model string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return nil

@@ -60,17 +60,9 @@ func (s *Server) getLeaderConn() (*grpc.ClientConn, error) {
 		return nil, fmt.Errorf("no leader")
 	}
 
-	// Assuming Raft address is Host:RaftPort
-	// We want Host:GRPCPort
-	host, _, err := net.SplitHostPort(string(leaderAddr))
-	if err != nil {
-		// Fallback if no port in address (e.g. just hostname?)
-		// But Raft addresses almost always have ports.
-		return nil, fmt.Errorf("invalid leader address: %v", err)
-	}
-
-	target := fmt.Sprintf("%s:%d", host, s.port)
-	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Since we are using the same port for Raft and gRPC (raft-grpc-transport),
+	// we can use the leader address directly.
+	return grpc.NewClient(string(leaderAddr), grpc.WithTransportCredentials(insecure.NewCredentials()))
 }
 
 func (s *Server) SubmitTask(ctx context.Context, req *pb.SubmitTaskRequest) (*pb.SubmitTaskResponse, error) {
