@@ -7,7 +7,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o gravity-ai ./cmd/agent
+RUN go build -o gravity-ai ./cmd/gravity-ai
 
 FROM alpine:latest
 
