@@ -32,7 +32,7 @@ func NewAgentService(raft *raft.Raft, r TaskRegistrar) *AgentService {
 }
 
 type TaskRegistrar interface {
-	RegisterTask(task *core.Task, ch chan *core.Task)
+	RegisterTask(task *core.Task) <-chan *core.Task
 	DeregisterTask(task *core.Task)
 }
 type AgentService struct {
@@ -53,8 +53,7 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 	}
 
 	// Register listener
-	ch := make(chan *core.Task, 1)
-	a.taskRegistrar.RegisterTask(task, ch)
+	ch := a.taskRegistrar.RegisterTask(task)
 
 	taskBytes, err := json.Marshal(task)
 	if err != nil {

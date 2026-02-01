@@ -19,10 +19,12 @@ func (n *TasksManager) NotifyTaskCompletion(task *core.Task) {
 	}
 }
 
-func (n *TasksManager) RegisterTask(task *core.Task, ch chan *core.Task) {
+func (n *TasksManager) RegisterTask(task *core.Task) <-chan *core.Task {
+	ch := make(chan *core.Task, 1)
 	n.listeners.Store(task.ID, ch)
+	return ch
 }
 
 func (n *TasksManager) DeregisterTask(task *core.Task) {
-	n.listeners.Store(task.ID, task)
+	n.listeners.Delete(task.ID)
 }
