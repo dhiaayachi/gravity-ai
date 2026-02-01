@@ -19,7 +19,7 @@ func (m *MockLLM) Generate(prompt string) (string, error) {
 	return "Mock Answer for: " + prompt, nil
 }
 
-func (m *MockLLM) Validate(taskContent string, proposal string) (bool, string, error) {
+func (m *MockLLM) Validate(taskContent string, proposal string, ctx *llm.ValidationContext) (bool, string, error) {
 	if !m.Healthy {
 		return false, "", errors.New("llm unhealthy")
 	}

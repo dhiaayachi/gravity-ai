@@ -54,9 +54,15 @@ func (c *OllamaClient) Generate(prompt string) (string, error) {
 	return responseContent, nil
 }
 
-func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, string, error) {
-	ctx := context.Background()
-	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
+func (c *OllamaClient) Validate(taskContent string, proposal string, ctx *ValidationContext) (bool, string, error) {
+	bgCtx := context.Background()
+	round := 1
+	history := ""
+	if ctx != nil {
+		round = ctx.CurrentRound
+		history = ctx.FormatHistory()
+	}
+	prompt := fmt.Sprintf(validatePrompt, taskContent, round, proposal, history)
 
 	// Format expects json.RawMessage in this version
 	format := json.RawMessage(`"json"`)
@@ -75,7 +81,7 @@ func (c *OllamaClient) Validate(taskContent string, proposal string) (bool, stri
 		return nil
 	}
 
-	if err := c.client.Generate(ctx, req, fn); err != nil {
+	if err := c.client.Generate(bgCtx, req, fn); err != nil {
 		return false, "", err
 	}
 

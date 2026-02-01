@@ -385,8 +385,31 @@ func (e *Engine) runProposalPhase(task *core.Task, force bool) error {
 
 func (e *Engine) runVotePhase(task *core.Task) error {
 
-	// Use LLM to validate the proposal
-	isValid, reasoning, err := e.llm.Validate(task.Content, task.Result)
+	// Build validation context with historical data
+	valCtx := &llm.ValidationContext{
+		Proposals:    task.Proposals,
+		Feedback:     make(map[int][]string),
+		CurrentRound: task.Round,
+	}
+
+	// Collect feedback from all previous rounds
+	for round := 1; round < task.Round; round++ {
+		votes, err := e.fsm.GetTaskVotes(task.ID, round)
+		if err == nil {
+			for _, v := range votes {
+				if !v.Accepted {
+					if v.Rebuttal != "" {
+						valCtx.Feedback[round] = append(valCtx.Feedback[round], v.Rebuttal)
+					} else if v.Reasoning != "" {
+						valCtx.Feedback[round] = append(valCtx.Feedback[round], v.Reasoning)
+					}
+				}
+			}
+		}
+	}
+
+	// Use LLM to validate the proposal with historical context
+	isValid, reasoning, err := e.llm.Validate(task.Content, task.Result, valCtx)
 	log.Printf("[%s] Validating and casting vote for task %s voted: %v reason: %s", e.nodeConfig.ID, task.ID, isValid, reasoning)
 	if err != nil {
 		log.Printf("[%s] LLM validation failed: %v", e.nodeConfig.ID, err)

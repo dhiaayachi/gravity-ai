@@ -55,8 +55,14 @@ func (c *ClaudeClient) Generate(prompt string) (string, error) {
 	return *resp.Content[0].Text, nil
 }
 
-func (c *ClaudeClient) Validate(taskContent string, proposal string) (bool, string, error) {
-	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
+func (c *ClaudeClient) Validate(taskContent string, proposal string, ctx *ValidationContext) (bool, string, error) {
+	round := 1
+	history := ""
+	if ctx != nil {
+		round = ctx.CurrentRound
+		history = ctx.FormatHistory()
+	}
+	prompt := fmt.Sprintf(validatePrompt, taskContent, round, proposal, history)
 
 	resp, err := c.client.CreateMessages(
 		context.Background(),

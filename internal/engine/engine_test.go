@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhiaayachi/gravity-ai/internal/core"
 	tasks_manager "github.com/dhiaayachi/gravity-ai/internal/engine/tasks-manager"
+	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	raftInternal "github.com/dhiaayachi/gravity-ai/internal/raft"
 	fsm2 "github.com/dhiaayachi/gravity-ai/internal/raft/fsm"
 	"github.com/dhiaayachi/gravity-ai/internal/state"
@@ -91,7 +92,7 @@ func (m *mockLLM) Generate(_ string) (string, error) {
 	return m.genResp, m.genErr
 }
 
-func (m *mockLLM) Validate(_ string, _ string) (bool, string, error) {
+func (m *mockLLM) Validate(_ string, _ string, _ *llm.ValidationContext) (bool, string, error) {
 	return m.validResp, "mock reasoning", m.validErr
 }
 

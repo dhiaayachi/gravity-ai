@@ -44,13 +44,19 @@ func (c *GeminiClient) Generate(prompt string) (string, error) {
 	return parseGeminiResponse(resp)
 }
 
-func (c *GeminiClient) Validate(taskContent string, proposal string) (bool, string, error) {
+func (c *GeminiClient) Validate(taskContent string, proposal string, valCtx *ValidationContext) (bool, string, error) {
 	ctx := context.Background()
 	model := c.client.GenerativeModel(c.model)
 
+	round := 1
+	history := ""
+	if valCtx != nil {
+		round = valCtx.CurrentRound
+		history = valCtx.FormatHistory()
+	}
 	// Gemini doesn't strictly enforce JSON object mode like OpenAI yet in all versions,
 	// but prompt engineering usually works.
-	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
+	prompt := fmt.Sprintf(validatePrompt, taskContent, round, proposal, history)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {

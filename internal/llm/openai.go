@@ -50,8 +50,14 @@ type validationResponse struct {
 	Reason string `json:"reason"`
 }
 
-func (c *OpenAIClient) Validate(taskContent string, proposal string) (bool, string, error) {
-	prompt := fmt.Sprintf(validatePrompt, taskContent, proposal)
+func (c *OpenAIClient) Validate(taskContent string, proposal string, ctx *ValidationContext) (bool, string, error) {
+	round := 1
+	history := ""
+	if ctx != nil {
+		round = ctx.CurrentRound
+		history = ctx.FormatHistory()
+	}
+	prompt := fmt.Sprintf(validatePrompt, taskContent, round, proposal, history)
 
 	// Use JSON mode for reliability
 	resp, err := c.client.CreateChatCompletion(
