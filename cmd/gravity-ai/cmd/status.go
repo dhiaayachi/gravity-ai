@@ -44,7 +44,7 @@ var statusCmd = &cobra.Command{
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "ID\tRAFT STATE\tREPUTATION\tPROVIDER\tMODEL")
+			fmt.Fprintln(w, "id\tRAFT STATE\tREPUTATION\tPROVIDER\tMODEL")
 			for _, s := range states {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", s.ID, s.RaftState, s.Reputation, s.LLMProvider, s.LLMModel)
 			}

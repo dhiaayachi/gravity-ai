@@ -52,12 +52,8 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 		CreatedAt: time.Now(),
 	}
 
-	// Register listener
-	ch := a.taskRegistrar.RegisterTask(task)
-
 	taskBytes, err := json.Marshal(task)
 	if err != nil {
-		a.taskRegistrar.DeregisterTask(task)
 		return nil, err
 	}
 
@@ -68,15 +64,15 @@ func (a *AgentService) SubmitTask(content string, requester string) (*TaskFuture
 
 	b, err := json.Marshal(cmd)
 	if err != nil {
-		a.taskRegistrar.DeregisterTask(task)
 		return nil, err
 	}
 
 	if f := a.raft.Apply(b, 15*time.Second); f.Error() != nil {
-		a.taskRegistrar.DeregisterTask(task)
 		return nil, f.Error()
 	}
 
+	// Register listener
+	ch := a.taskRegistrar.RegisterTask(task)
 	return &TaskFuture{
 		TaskID:   taskID,
 		resultCh: ch,

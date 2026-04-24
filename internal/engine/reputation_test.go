@@ -11,7 +11,7 @@ func TestReputationUpdates_And_LeadershipTransfer(t *testing.T) {
 	h := newTestHarness(t, &mockClusterClient{})
 
 	// 1. Setup Initial State
-	// Current Node (Leader) = "TestReputationUpdates_And_LeadershipTransfer" (sanitized by Raft ID usually, but here h.nodeConfig.ID)
+	// Current Node (Leader) = "TestReputationUpdates_And_LeadershipTransfer" (sanitized by Raft id usually, but here h.nodeConfig.id)
 	leaderID := h.nodeConfig.ID
 	worker1 := "worker1"
 	worker2 := "worker2"

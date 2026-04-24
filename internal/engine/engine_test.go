@@ -154,7 +154,7 @@ func (m *mockTaskNotifier) NotifyTaskCompletion(_ *core.Task) {}
 
 func newTestHarness(t *testing.T, clusterClient ClusterClient) *testHarness {
 	// Use t.Name() to avoid address collisions in InmemTransport
-	// Sanitize name for ID (limit length if needed, simple replacement)
+	// Sanitize name for id (limit length if needed, simple replacement)
 	nodeID := raft.ServerID(t.Name())
 	addr := raft.ServerAddress(t.Name())
 

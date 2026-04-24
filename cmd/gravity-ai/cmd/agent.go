@@ -16,6 +16,7 @@ import (
 	gravityHttp "github.com/dhiaayachi/gravity-ai/internal/http"
 	"github.com/dhiaayachi/gravity-ai/internal/llm"
 	"github.com/dhiaayachi/gravity-ai/internal/logger"
+	metadata_provider "github.com/dhiaayachi/gravity-ai/internal/metadata"
 	"github.com/dhiaayachi/gravity-ai/internal/raft"
 	clusterstate "github.com/dhiaayachi/gravity-ai/internal/state"
 	"github.com/dhiaayachi/gravity-ai/test/mocks"
@@ -39,11 +40,11 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 
 	// Local Flags for Agent
-	agentCmd.Flags().String("agent-id", "agent-1", "Agent ID")
+	agentCmd.Flags().String("agent-id", "agent-1", "Agent id")
 	agentCmd.Flags().String("bind-addr", "127.0.0.1:8000", "Bind address")
 	agentCmd.Flags().String("http-addr", ":8080", "HTTP Service address")
 	agentCmd.Flags().String("data-dir", "./data", "Data directory")
-	agentCmd.Flags().String("peers", "", "Comma-separated list of peer ID=Address pairs (e.g. node2=127.0.0.1:8001)")
+	agentCmd.Flags().String("peers", "", "Comma-separated list of peer id=Address pairs (e.g. node2=127.0.0.1:8001)")
 	agentCmd.Flags().Bool("bootstrap", false, "Bootstrap the cluster")
 
 	// LLM Flags
@@ -163,6 +164,9 @@ func runAgent(cmd *cobra.Command) {
 	taskManager := tasks_manager.TasksManager{}
 
 	eng := engine.NewEngine(node, llmClient, clusterClient, &taskManager, appLogger, cfg.LLMProvider, cfg.Model)
+
+	provider := metadata_provider.NewProvider(node, clusterClient, cfg.LLMProvider, cfg.Model)
+	provider.RegisterMetadata()
 
 	eng.Start()
 

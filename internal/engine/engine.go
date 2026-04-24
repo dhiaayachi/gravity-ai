@@ -26,7 +26,7 @@ type Engine struct {
 	// Decoupled dependencies
 	fsm        fsm.FSM
 	llm        llm.Client
-	nodeConfig *raftInternal.Config // For ID
+	nodeConfig *raftInternal.Config // For id
 
 	clusterClient ClusterClient
 	clusterState  clusterstate.ClusterState
@@ -81,61 +81,8 @@ func NewEngine(node *raftInternal.AgentNode, llm llm.Client, clusterClient Clust
 	}
 }
 
-func (e *Engine) GetAgentState() clusterstate.AgentState {
-	return clusterstate.AgentState{
-		ID:          e.nodeConfig.ID,
-		RaftState:   e.Node.Raft.State().String(),
-		Reputation:  e.fsm.GetReputation(e.nodeConfig.ID),
-		LLMProvider: e.llmProvider,
-		LLMModel:    e.llmModel,
-	}
-}
-
 func (e *Engine) Start() {
 	e.logger.Info("Starting Engine")
-
-	// Publish Metadata
-	go func() {
-		// Wait a bit for Raft to be ready?
-		time.Sleep(2 * time.Second)
-
-		meta := core.AgentMetadata{
-			ID:          e.nodeConfig.ID,
-			LLMProvider: e.llmProvider,
-			LLMModel:    e.llmModel,
-		}
-
-		// Retry loop
-		for i := 0; i < 5; i++ {
-			var err error
-			if e.clusterState.IsLeader() {
-				// Local Apply
-				metaBytes, _ := json.Marshal(meta)
-				cmd := fsm.LogCommand{
-					Type:  fsm.CommandTypeUpdateMetadata,
-					Value: metaBytes,
-				}
-				b, _ := json.Marshal(cmd)
-				if f := e.Node.Raft.Apply(b, 5*time.Second); f.Error() != nil {
-					err = f.Error()
-				}
-			} else {
-				// Forward to Leader
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				err = e.clusterClient.UpdateMetadata(ctx, meta.ID, meta.LLMProvider, meta.LLMModel)
-
-			}
-
-			if err == nil {
-				e.logger.Info("Published Metadata", zap.String("id", meta.ID))
-				break
-			}
-			e.logger.Warn("Failed to publish metadata, retrying...", zap.Error(err))
-			time.Sleep(2 * time.Second)
-		}
-	}()
-
 	go func() {
 		for {
 			select {
