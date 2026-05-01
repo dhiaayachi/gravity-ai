@@ -54,7 +54,7 @@ fi
 
 if [ -z "$GRAVITY_BIN" ]; then
     echo "Error: gravity-ai binary not found in current directory, project root, or PATH."
-    echo "Please build it with: go build -o gravity-ai ./cmd/agent"
+    echo "Please build it with: go build -o gravity-ai ./cmd/gravity-ai"
     exit 1
 fi
 

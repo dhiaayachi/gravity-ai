@@ -5,13 +5,23 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
 ## Prerequisites
 
 - Docker and Docker Compose
-- A Gemini API Key
+- A Gemini API Key (used by `node2`)
+- An Ollama instance running on the host with `llama3:8b` pulled — `node1`
+  and `node3` connect to it via `host.docker.internal:11434`. To use Gemini
+  on those nodes instead, swap the commented-out env block in
+  `docker-compose.yml`.
 
 ## Setup
 
 1.  **Set your API Key**:
     ```bash
     export GEMINI_API_KEY="your_api_key_here"
+    ```
+
+    And make sure Ollama is running locally with the model pulled:
+    ```bash
+    ollama pull llama3:8b
+    ollama serve
     ```
 
 2.  **Build and Run**:
@@ -25,20 +35,24 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
     Build the gravity agent CLI on your host machine:
     ```bash
     # From the project root
-    go build -o gravity-ai ./cmd/agent
+    go build -o gravity-ai ./cmd/gravity-ai
     ```
 
 4.  **Submit a Task**:
-    Use the `gravity-ai` CLI to submit a task to the leader (Node 1):
-    
+    The prompt for this example lives in `prompt.md` — a Go-output question
+    designed to be deterministic but easy for a single LLM to get wrong, so
+    you can watch the cluster brainstorm, propose, and vote on it.
+
+    Pipe it into the `gravity-ai` CLI:
+
     ```bash
-    ./gravity-ai submit -u http://localhost:8080 -c "Write a haiku about space"
+    cat examples/3-nodes/prompt.md | ./gravity-ai submit -u http://localhost:8080
     ```
-    
-    Or use the helper script (which uses the CLI):
+
+    Or via the helper script (also reads stdin):
     ```bash
     cd examples/3-nodes
-    ./submit_task.sh -c "Write a haiku about space"
+    cat prompt.md | ./submit_task.sh
     ```
 
 5.  **Check Status**:
@@ -62,4 +76,7 @@ This example demonstrates how to run a 3-node Gravity AI cluster using Docker Co
 
 ## Configuration
 
-The configuration is handled via environment variables in `docker-compose.yml`, mapped to command-line flags in `start.sh`.
+The configuration is handled via environment variables in
+`docker-compose.yml` (prefix `GRAVITY_`). The container entrypoint runs
+`./gravity-ai agent` directly; flags are read from those env vars by the
+config loader (see `config/config.go`).
