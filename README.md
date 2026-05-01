@@ -2,20 +2,20 @@
 
 ## Why
 Gravity AI is a consensus platform for AI agents.
-A possible use case is a critical task where answer accuracy and 
-consensus is important, and we would like a community of diverse agents 
+A possible use case is a critical task where answer accuracy and
+consensus is important, and we would like a community of diverse agents
 to agree on a given answer/solution.
 
 ## Usage
 
 ### Build CLI
 ```bash
-go build -o gravity-ai ./cmd/agent
+go build -o gravity-ai ./cmd/gravity-ai
 ```
 
 ### Run Agent
 ```bash
-./gravity-ai agent --config config.yaml
+./gravity-ai agent --config gravity.yaml
 ```
 
 ### Client Commands
@@ -29,8 +29,10 @@ go build -o gravity-ai ./cmd/agent
 
 ## Architecture
 
-Each agent will include an agent loop and a raft instance. 
-Raft will be responsible for persisting data and leader election.
+Each agent runs a Raft node alongside an event-driven engine.
+Raft persists task state and elects the leader; the engine drives the
+consensus protocol on top of Raft-committed events, so every node sees
+every state transition through the same channel.
 
 ### Operation
 
@@ -38,40 +40,49 @@ Raft will be responsible for persisting data and leader election.
 When an agents cluster is bootstrapped, agents will:
 1. Bootstrap raft
 2. Elect a raft leader
-3. persist an agent configuration that include the agent reputation (initialized to 0)
-4. Each agent will maintain connectivity with its backend LLM and health check it
-
+3. Initialize each agent's reputation to 100
+4. Publish each agent's LLM provider/model metadata to the cluster via raft
 
 #### Leader election
-Unlike normal raft leader election the election will take into account node reputation.
-The idea is to have the healthy node with the highest reputation elected as leader.
-So in addition to normal raft criteria to vote for a node, the node that is receiving the vote
-need to have a higher reputation than the node giving it.
+Two reputation-aware mechanisms run in parallel:
 
-#### Node Health
-A node is considered healthy if:
-1. it's reachable from a majority of nodes
-2. Its backend LLM is healthy
+1. **Vote filtering.** During normal Raft elections, an agent rejects a
+   `RequestVote` from any candidate whose reputation is lower than its own
+   (`internal/raft/transport.go`). Standard Raft criteria apply on top of
+   that.
+2. **Post-task transfer.** After every task finalization, the current
+   leader inspects peer reputations and voluntarily transfers leadership
+   to any peer with strictly higher reputation
+   (`Engine.checkForLeadershipTransfer`).
 
 #### Task execution
-When a task is admitted, it's always forwarded to a leader node. 
-The leader node will be the task facilitator. 
-It will first admit the task by persisting in the raft log (as `admitted`) perform the 3 following rounds:
+When a task is admitted, it is forwarded to the leader. The leader is the
+task facilitator and runs the following phases:
 
-##### Brainstorm:
-The task will be sent to each node to answer it. The answer is sent to the leader.
-The leader need to ensure that a quorum of the agents answer the task.
+##### Brainstorm
+The task is sent to each node to answer it; answers are forwarded back to
+the leader.
 
 ##### Proposal
-The leader create a single answer based on all the answers from the different agents.
+The leader aggregates the answers into a single proposal via `llm.Aggregate`.
 
 ##### Vote
-The answer is sent to all the nodes to vote on it. The agents can either vote `Accepted` or `Rejected`.
+The proposal is sent to all nodes. Each agent validates and votes
+`Accepted` or `Rejected`, attaching reasoning and (for rejections) a
+rebuttal.
 
-If a majority of agents accept the proposal the answer is accepted, the leader send the final answer to the user 
-and mark the task as `done` by persisting it in raft. The leader reputation is incremented by 1.
+If a quorum of agents accept, the task is marked `done` and the answer is
+streamed back to the user.
 
-if a majority of agents reject the proposal the leader score is decremented by 1 and a leader election is triggered 
-to allow a new leader to step in. The new leader will restart the task execution from the beginning.
+If the proposal is rejected, the leader feeds the rejecters' reasoning
+back into `llm.Revise`, produces a new proposal, and runs another vote
+round. This repeats up to `MaxRounds`; if no round reaches consensus,
+the engine falls back to the round with the most accepts above the
+quorum, or marks the task as failed.
 
-
+#### Reputation updates
+After each task finalization, reputations are clamped to `[0, 100]` and
+updated as follows:
+- **Leader:** ±10 on task success / failure
+- **Each voter:** ±1 depending on whether their vote agreed with the
+  final outcome
